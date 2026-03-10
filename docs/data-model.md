@@ -2,53 +2,40 @@
 
 ## Purpose
 
-This document defines the core app entities and their intended relationships so the persistence layer and queue behavior stay consistent from the first prototype onward.
+This document defines the minimal persisted shapes needed for the first versions of FileSwipe so the queue, reward loop, and resume behavior stay consistent without overbuilding the storage layer.
 
 ## Model design goals
 
 - support local-first persistence
-- make resume after restart straightforward
+- keep resume after restart straightforward
 - make action history auditable
-- keep state transitions explicit
-- support future re-scan and newly found item detection
+- keep status transitions explicit
+- support lightweight re-scan matching later
+- track emotional progress metrics such as storage freed without inventing extra entities too early
 
-## Core entities
+## Core persisted shapes
 
 ## `FileItem`
 
-Represents one reviewable file in the app.
+Represents one reviewable photo.
 
 Suggested fields:
 
 - `id`: stable app-level identifier
-- `sourceNativeId`: underlying source identifier when available
-- `uri`: current known URI or content reference
+- `nativeAssetId`: underlying media-library identifier when available
+- `uri`: current known content reference
+- `previewUri`: preview-ready URI when available
 - `name`: display name
 - `mimeType`: normalized MIME type
-- `size`: size in bytes if known
-- `modifiedAt`: last modified timestamp if known
-- `createdAt`: created timestamp if known and available
-- `bucketType`: coarse grouping such as `photo`, `screenshot`, `document`
-- `previewUri`: optional preview-ready URI
-- `status`: `pending | kept | moved | delete_candidate | deleted | skipped | error`
-- `sourceId`: owning source reference
-- `fingerprintLight`: lightweight dedupe or change-detection fingerprint
-- `lastActionAt`: timestamp of most recent action on this file
+- `sizeBytes`: file size in bytes if known
+- `createdAt`: created timestamp if available
+- `modifiedAt`: modified timestamp if available
+- `bucketType`: `screenshots | camera | downloads | other`
+- `sortKey`: normalized value used for stable queue ordering
+- `status`: `pending | kept | deleted | skipped | error`
+- `lastActionAt`: timestamp of most recent action
 - `lastErrorCode`: optional recent failure code
-
-## `Source`
-
-Represents one chosen content source.
-
-Suggested fields:
-
-- `id`: source identifier
-- `kind`: `media_library | picked_docs | folder_scope_future`
-- `label`: user-facing name
-- `createdAt`: first time the source was saved
-- `lastScannedAt`: most recent completed scan timestamp
-- `permissionState`: normalized stored permission state
-- `scanVersion`: optional snapshot or revision marker
+- `isNewSinceLastScan`: optional flag for later re-scan surfacing
 
 ## `ActionLog`
 
@@ -58,128 +45,131 @@ Suggested fields:
 
 - `id`: action log id
 - `fileId`: related file id
-- `action`: `keep | move | delete | skip | open | rescan`
-- `destination`: optional target destination for move
-- `timestamp`: event time
+- `action`: `keep | delete | skip | open | undo | rescan | move_future`
 - `result`: `success | failed | cancelled`
-- `errorMessage`: optional human-readable failure detail
+- `timestamp`: event time
+- `sessionId`: current session identifier
+- `bytesDelta`: storage change applied by the action when relevant
+- `revertedActionId`: optional link to an undone action
 - `errorCode`: optional structured failure code
-- `sessionId`: session where the action happened
+- `errorMessage`: optional human-readable failure detail
 
-## `ReviewSession`
+## `AppState`
 
-Represents one persisted session boundary for queue resume and history grouping.
+Represents the persisted app snapshot used for hydration and resume.
 
 Suggested fields:
 
-- `id`: session identifier
-- `sourceId`: related source
-- `startedAt`: session start time
-- `lastOpenedAt`: last activity timestamp
-- `currentFileId`: current visible file at last persistence point
-- `isComplete`: whether all pending items were exhausted
+- `permissionState`: normalized media permission state
+- `currentLane`: `photos`
+- `sessionMode`: `quick10 | full_queue`
+- `targetCount`: `10 | null`
+- `currentFileId`: active file id
+- `queueOrder`: array of file ids in stable order
+- `activeFilter`: `all | screenshots | camera | downloads`
+- `sortMode`: `oldest_first | newest_first | largest_first | random`
+- `lastCompletedScanAt`: timestamp or null
+- `isScanning`: boolean
+- `undoBuffer`: array of recent reversible action ids, max length 3
+- `sessionStats`: nested summary state
+- `settings`: nested preference state
 
-## `SessionStats`
+## Nested state shapes
 
-Represents persisted or derived summary counters.
+### `sessionStats`
 
 Suggested fields:
 
 - `reviewedCount`
 - `keptCount`
-- `movedCount`
 - `deletedCount`
 - `skippedCount`
 - `pendingCount`
-- `streakCount`
-- `newlyFoundCount`
+- `storageFreedBytes`
+- `currentStreak`
+- `bestStreak`
+- `milestonesHit`
+- `startedAt`
 - `lastUpdatedAt`
 
-## `Destination`
-
-Represents a saved or recent move target.
-
-Suggested fields:
-
-- `id`
-- `label`
-- `uri`
-- `kind`
-- `lastUsedAt`
-- `isFavorite`
-
-## `AppPreferences`
+### `settings`
 
 Suggested fields:
 
 - `hapticsEnabled`
 - `animationsEnabled`
-- `onboardingCompleted`
-- `lastUsedSourceId`
+- `followSystemTheme`
+- `showGestureHints`
+- `hasCompletedOnboarding`
 - `debugLoggingEnabled`
+
+## Deferred entities
+
+Do not create these as first-class persisted entities until the product truly needs them:
+
+- `Source`
+- `ReviewSession`
+- `Destination`
+- comparison or grouping records
+
+Those can be introduced later if the app adds multiple lanes, richer move flows, or heavier analytics needs.
 
 ## Status transition rules
 
 Preferred status lifecycle:
 
-- `pending` -> `kept`
-- `pending` -> `skipped`
-- `pending` -> `delete_candidate`
-- `delete_candidate` -> `pending` on cancel
-- `delete_candidate` -> `deleted` on confirmed success
-- `pending` -> `moved` on confirmed success
-- any actionable state -> `error` only when the app needs explicit recovery handling
+- `pending -> kept`
+- `pending -> skipped`
+- `pending -> deleted` only after confirmed successful delete
+- `pending -> error` only when explicit recovery handling is required
+- `kept -> pending` on safe undo
+- `skipped -> pending` on safe undo
 
 ## Important transition constraints
 
-- do not jump directly from `pending` to `deleted` without a confirmed delete path
-- do not mark `moved` until move succeeds
-- `open` should not change terminal review status by itself
-- `skip` should preserve future review eligibility
+- do not use a `delete_candidate` status in V1
+- canceling delete does not change status
+- do not mark `deleted` until native delete succeeds
+- `open` does not change terminal review status
+- `skip` preserves future review eligibility
 
 ## Identity strategy
 
 Preferred identifier strategy:
 
 - primary app id generated and stored locally
-- retain native source ids when available for re-scan matching
-- use lightweight fingerprint as a fallback for change detection when native ids are unstable or missing
+- retain media-library asset ids when available for re-scan matching
+- use `uri + modifiedAt` or a lightweight fingerprint only as a fallback
 
 ## Re-scan matching strategy
 
 Match in this priority order when possible:
 
-1. stable source-native id
-2. URI plus modified timestamp
+1. `nativeAssetId`
+2. `uri + modifiedAt`
 3. lightweight fingerprint
 
 Goal:
 
 - reviewed items should not re-enter as brand-new items unless they are meaningfully different or the source mapping truly changed
 
-## Suggested relational view
-
-- one `Source` has many `FileItem`
-- one `ReviewSession` belongs to one `Source`
-- one `ReviewSession` has many `ActionLog`
-- one `FileItem` has many `ActionLog`
-- `SessionStats` can be derived per `ReviewSession` or globally cached
-
 ## Derived selectors to support
 
 The store should be able to answer these quickly:
 
 - current pending item
+- next two stack items
 - pending count
 - reviewed count
-- recent actions
-- newly found items since last completed scan
-- items with failed recent operations
-- items by status or bucket type
+- storage freed total
+- recent reversible actions
+- items by bucket type
+- quick-goal completion state
 
 ## Data integrity rules
 
-- timestamps should be stored in a consistent machine-readable format
-- counters should never drift from durable file status truth without repair logic
+- timestamps should use a consistent machine-readable format
+- counters must be derived from durable status truth or repaired from it
 - action logs should be append-only where practical
-- local reset should clear or archive all related state together
+- undo rollback must repair both status and progress counters together
+- local reset should clear all related state together

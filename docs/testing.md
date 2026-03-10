@@ -2,15 +2,15 @@
 
 ## Testing philosophy
 
-This app touches user files and trust-sensitive operations. Testing must prioritize correctness, safety, recovery, and permission handling over visual polish.
+This app touches user files and trust-sensitive operations, but it also has to feel fast and satisfying enough to repeat. Testing must prioritize correctness, first-swipe speed, short-session usability, and recovery over polish for polish's sake.
 
 ## Testing priorities in order
 
 1. No false success for destructive or move actions.
-2. Queue and session state survive interruptions.
-3. Permission handling stays honest and recoverable.
-4. Preview and scanning remain usable on real Android devices.
-5. UI polish does not break core flows.
+2. The first swipe happens quickly on a real Android phone.
+3. Queue and session state survive interruptions.
+4. Undo and progress counters stay internally consistent.
+5. Reward and motion polish do not damage clarity.
 
 ## Test layers
 
@@ -23,10 +23,11 @@ Primary targets:
 - queue ordering
 - action reducer correctness
 - stats calculation
+- undo buffer behavior
 - file status transitions
-- duplicate or fingerprint helper behavior
+- bucket classification helpers
 - sorting and filtering helpers
-- derived selector logic
+- quick-goal completion selectors
 
 ## 2. Integration tests
 
@@ -34,12 +35,12 @@ Focus on feature modules working together.
 
 Primary targets:
 
+- permission-gated scan boot
 - scanner to queue pipeline
-- permission-gated feature behavior
-- file operation result handling
+- delete result handling
 - session resume logic
 - summary calculation from stored state
-- action log persistence
+- undo rollback of counts and queue state
 
 ## 3. Manual device tests
 
@@ -47,11 +48,12 @@ Focus on real Android behavior.
 
 Primary targets:
 
-- permission prompts
-- gallery scanning speed
+- first-launch onboarding speed
+- media permission prompts
+- queue boot responsiveness
 - image preview performance
 - app background and foreground resume
-- interrupted actions
+- delete confirmation and failure handling
 - large media library handling
 - permission revoked after prior use
 
@@ -61,11 +63,12 @@ Run after every meaningful feature change.
 
 Always re-check:
 
-- scan works
-- queue restores
-- delete candidate flow still safe
-- move still reports success or failure correctly
-- summary metrics remain accurate
+- permission flow works
+- queue boots quickly
+- queue restores after restart
+- delete flow still reports truthfully
+- storage-freed score remains accurate
+- summary still matches persisted state
 
 ## Core testing scenarios
 
@@ -73,10 +76,10 @@ Always re-check:
 
 1. Install app.
 2. Open app.
-3. Grant media access.
-4. Start photo scan.
-5. App shows queue.
-6. Swipe or tap through 10 photos.
+3. Tap `Start cleaning`.
+4. Grant media access.
+5. Confirm the queue appears quickly.
+6. Review 10 photos.
 7. Close app.
 8. Reopen app.
 9. Verify queue resumes correctly.
@@ -84,14 +87,28 @@ Always re-check:
 Expected:
 
 - no crash
+- first card appears quickly enough to feel responsive
 - reviewed items stay reviewed
 - pending count decreases correctly
 
-## Scenario B: permission denied path
+## Scenario B: quick-session completion
+
+1. Start `Quick 10`.
+2. Review exactly 10 photos.
+3. Reach the summary screen.
+4. Choose `Continue`.
+
+Expected:
+
+- the goal boundary is clear
+- summary stats are accurate
+- continuing back into the queue is smooth
+
+## Scenario C: permission denied path
 
 1. Install app fresh.
-2. Deny media permission.
-3. Attempt to start cleanup.
+2. Tap `Start cleaning`.
+3. Deny media permission.
 
 Expected:
 
@@ -100,88 +117,86 @@ Expected:
 - retry path is visible
 - app does not show fake empty queue
 
-## Scenario C: permission revoked after prior use
+## Scenario D: reversible action undo
 
-1. Use app normally.
-2. Revoke permission from Android settings.
-3. Reopen app.
-4. Attempt re-scan or preview.
+1. Keep one photo.
+2. Tap `Undo`.
+3. Skip another photo.
+4. Tap `Undo` again.
 
 Expected:
 
-- app detects revoked permission
-- app blocks affected features gracefully
-- prior local state remains intact
-- user is guided to recover access
+- prior cards re-enter the queue correctly
+- counts roll back correctly
+- undo does not create duplicates
 
-## Scenario D: interrupted session
+## Scenario E: delete safety
+
+1. Attempt to delete a photo.
+2. Cancel the confirmation sheet.
+3. Attempt delete again and confirm.
+4. Trigger a failure case if possible.
+
+Expected:
+
+- cancel does not change status
+- successful delete updates storage-freed score
+- failed delete does not claim success
+
+## Scenario F: interrupted session
 
 1. Start reviewing files.
-2. Background app mid-session.
+2. Background the app mid-session.
 3. Force close app or let OS evict it.
 4. Reopen app.
 
 Expected:
 
 - queue position restored
-- action log remains correct
+- action history remains correct
 - no duplicate reprocessing of already reviewed files
 
-## Scenario E: failed move operation
+## Scenario G: filter and sort behavior
 
-1. Pick a file to move.
-2. Simulate or trigger move failure.
-3. Return to queue.
-
-Expected:
-
-- action result is shown as failed
-- file status does not falsely become moved
-- retry path exists
-- failure is recorded in action log
-
-## Scenario F: delete candidate safety
-
-1. Mark file for delete.
-2. Cancel confirmation.
-3. Verify item status.
-4. Confirm deletion on another item.
+1. Start a session.
+2. Switch filters between `All`, `Screenshots`, and `Camera`.
+3. Change sort mode if available.
+4. Return to the default ordering.
 
 Expected:
 
-- cancel does not change item to deleted
-- confirmed delete updates status correctly
-- user gets visible confirmation
-- deletion history entry is stored
+- active card and queue order remain understandable
+- counts stay correct
+- no missing or duplicated items appear
 
-## Scenario G: large library stress
+## Scenario H: large library stress
 
-1. Use device with large photo library.
+1. Use a device with a large photo library.
 2. Start scan.
-3. Scroll and review quickly.
-4. Trigger preview loads across many large images.
+3. Confirm the first card still appears before the full scan ends.
+4. Review quickly across many large images.
 
 Expected:
 
 - app remains responsive
 - memory pressure does not crash app
-- placeholders appear before previews load
+- inline scan state stays honest
 - queue continues functioning
 
-## Scenario H: new files added after session start
+## Scenario I: new files added after session start
 
-1. Scan media source.
+1. Scan photos lane.
 2. Review some items.
-3. Add new photos to gallery outside app.
+3. Add new photos to the gallery outside the app.
 4. Run re-scan.
 
 Expected:
 
 - new items detected accurately
 - already reviewed items are not duplicated
-- summary distinguishes new vs old pending items
+- queue and summary explain the difference cleanly
 
-## Scenario I: local data reset
+## Scenario J: local data reset
 
 1. Use app for several sessions.
 2. Go to settings.
@@ -194,11 +209,11 @@ Expected:
 - onboarding shown again if intended
 - no corrupted leftovers remain
 
-## Scenario J: offline behavior
+## Scenario K: offline behavior
 
-1. Put phone in airplane mode.
+1. Put the phone in airplane mode.
 2. Open app.
-3. Continue local review flow.
+3. Continue the local review flow.
 
 Expected:
 
@@ -208,21 +223,22 @@ Expected:
 
 ## Test automation guidance
 
-Early automation should focus on pure confidence-building logic, not flashy end-to-end scripts.
+Early automation should focus on confidence-building logic, not flashy end-to-end scripts.
 
 Best first automated targets:
 
-- queue engine
+- review engine
 - status transitions
+- undo behavior
 - summary calculations
 - permission gating selectors
-- file operation result reducers
+- file-operation result reducers
 
 ## Device test matrix direction
 
 ### Minimum
 
-- one real Android phone used as daily driver
+- one real Android phone used as the primary test device
 - one Android emulator for quick smoke checks
 
 ### Preferred
@@ -236,16 +252,17 @@ Best first automated targets:
 Create sample sets with:
 
 - 20 photos for quick tests
+- 100 to 200 photos for more realistic `Quick 10` and filter behavior
 - 500 to 1000 mixed photos for performance checks
-- screenshots, selfies, blurry images, duplicates, large images
-- a few picked PDF, doc, and text files for future document-lane testing
+- screenshots, selfies, duplicates, blurry shots, and large images
 
 ## Release checklist before each milestone
 
 - app installs cleanly
 - permissions behave as expected
+- queue appears quickly
 - queue survives restart
 - delete flow remains safe
 - failed actions never report success
-- summary counts are correct
+- storage-freed score is correct
 - no obvious UI break on small screens

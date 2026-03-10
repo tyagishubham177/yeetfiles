@@ -2,34 +2,36 @@
 
 ## Architecture stance
 
-FileSwipe is Android-first, local-first, and capability-aware.
+FileSwipe is Android-first, local-first, speed-to-first-swipe aware, and capability-aware.
 
 That stance means:
 
-- the app should be built around supported Android-native paths, not imagined file access
-- local persistence is a first-class part of the design, not an afterthought
-- every permission-dependent feature must gate itself
-- risky file operations must be wrapped in explicit, typed result handling
+- build around supported Android-native photo flows, not imagined broad storage access
+- treat local persistence as a first-class part of the loop
+- gate every permission-dependent feature explicitly
+- keep the first implementation smaller than the docs used to suggest
+- optimize for a fast queue boot before adding broad abstractions
 
 ## Recommended stack
 
 - React Native
 - Expo
 - TypeScript with strict mode
-- Expo Router or React Navigation, with Expo Router preferred if it keeps route structure simple
-- Zustand for lightweight app state
-- SQLite or equivalent local persistent store for indexed state
-- Expo Media Library for media access
-- Expo FileSystem for supported file operations
-- Expo Document Picker for document-lane flows when that lane begins
+- Expo Router, unless navigation complexity proves otherwise
+- Zustand for app state
+- AsyncStorage through a thin persistence adapter for Phase 0 and Phase 1
+- Expo Media Library for photo access
+- React Native Reanimated plus React Native Gesture Handler for the card loop
+- Expo FileSystem only where it supports trustworthy local operations or logging
 
 ## Architecture goals
 
+- fast first swipe on a small real-device photo library
 - reliable resume after restart
-- clean separation between UI and native capability access
-- stable queue behavior over multiple sessions
+- deterministic queue behavior over multiple sessions
+- simple persistence that can evolve later
 - safe and auditable file operations
-- low mental overhead for future iteration
+- low mental overhead for early iteration
 
 ## Layer model
 
@@ -37,9 +39,9 @@ That stance means:
 
 Responsibilities:
 
-- boot app
+- boot the app
 - hydrate persisted state
-- load fonts and theme tokens
+- load fonts and theme settings
 - mount navigation
 - catch top-level errors
 
@@ -49,92 +51,95 @@ Outputs:
 - app-level providers
 - startup readiness state
 
-## 2. Permission layer
+## 2. Permission and boot layer
 
 Responsibilities:
 
-- query current permission state
-- request permission when needed
-- normalize permission status across screens
-- react to revoked permission on app resume or feature entry
+- query current media permission state
+- request permission from the welcome flow
+- react to revoked permission on app resume
+- trigger scan boot immediately after permission is granted
 
 Outputs:
 
 - permission snapshot
-- capability flags for scan and preview actions
+- boot state for the queue
+- resume eligibility
 
-## 3. Scanner layer
+## 3. Scanner and classifier layer
 
 Responsibilities:
 
-- query supported source items
+- page through supported photo assets
 - normalize raw media metadata
-- generate stable app-level file records
-- persist scan snapshot and source metadata
+- classify lightweight buckets such as screenshots or camera photos
+- feed cards into the queue as soon as enough data is available
 
 Outputs:
 
 - normalized `FileItem` records
-- source snapshot metadata
-- newly found item detection inputs
+- queue order seeds
+- filter and sort metadata
 
-## 4. Queue engine layer
+## 4. Review engine layer
 
 Responsibilities:
 
-- decide next file to show
-- record user review decisions
-- calculate pending and reviewed counts
-- support future undo or replay-friendly history
+- decide the next file to show
+- apply keep, delete, and skip transitions
+- maintain `Quick 10` and full-queue session logic
+- own undo buffering for reversible actions
 
 Outputs:
 
 - current queue state
 - action transitions
-- summary stats
+- recent reversible history
 
-## 5. Preview layer
+## 5. Reward and summary layer
 
 Responsibilities:
 
-- prepare thumbnail or preview URIs
-- degrade gracefully when preview generation is slow or unavailable
-- keep preview behavior isolated from queue logic
+- calculate reviewed and remaining counts
+- update storage-freed score
+- trigger milestone eligibility
+- build summary data for session completion
 
 Outputs:
 
-- preview source for current card
-- placeholder or fallback state
+- live score state
+- milestone events
+- summary payloads
 
-## 6. File operations layer
+## 6. Preview and file-ops layer
 
 Responsibilities:
 
-- execute `Move`, `Delete`, and `Open`
-- verify results as far as capability allows
-- return typed success or failure objects
-- write action log entries
+- prepare preview-ready photo data
+- open the current photo in a larger preview
+- execute delete and later move operations through typed results
+- isolate native capability handling from UI code
 
 Outputs:
 
-- operation result objects
-- user-visible success or failure state
-- persisted action log entries
+- preview data
+- file-operation result objects
+- failure context for logs
 
-## 7. Progress and persistence layer
+## 7. Persistence layer
 
 Responsibilities:
 
-- persist queue position
-- persist file statuses
-- persist summary counters or derive them efficiently
-- restore session state after restart
+- persist the minimal app state snapshot
+- store file records and action history
+- restore queue position, filters, and current mode after restart
+- support future migration to a stronger store if needed
 
 Outputs:
 
 - hydrated app state
-- summary metrics
-- resume eligibility state
+- stored action history
+- migration-safe persistence boundary
 
 ## Primary modules
 
@@ -144,117 +149,133 @@ Navigation, boot logic, theme setup, error boundaries, and startup hydration.
 
 ### `permissions`
 
-Runtime Android permission checks, revocation handling, and permission-state storage.
+Runtime media permission checks, revocation handling, and queue boot gating.
 
 ### `scanner`
 
-Indexes supported items from the selected source and normalizes metadata into internal records.
+Photo indexing, normalization, bucket classification, and streaming results into the review engine.
 
-### `queue-engine`
+### `review-engine`
 
-Produces the next candidate file, records actions, manages ordering rules, and keeps the queue deterministic.
+Queue ordering, keep/delete/skip transitions, quick-goal tracking, and undo buffering.
+
+### `rewards`
+
+Reviewed counts, storage-freed math, milestone events, and summary payloads.
 
 ### `preview-engine`
 
-Builds preview-ready URIs or image metadata without coupling preview generation to queue state mutation.
+Preview-ready URIs and larger-preview preparation without mutating queue state.
 
 ### `file-ops`
 
-Owns move, delete, open, result verification, and the final typed response returned to UI.
+Delete, later move, open-preview handoff, and typed result normalization.
 
-### `progress-store`
+### `persistence`
 
-Stores queue position, file status, session summary, and recent history.
-
-### `sync-watch`
-
-Compares later scans against prior snapshots to detect newly added items without reintroducing reviewed files.
+AsyncStorage adapter, hydration, migration helpers, and action log storage.
 
 ## Data flow overview
 
-### Initial scan flow
+### Initial boot to first swipe
 
-1. User selects supported source.
-2. Permission layer verifies access.
-3. Scanner queries source and normalizes items.
-4. Persistence layer stores the snapshot and file records.
-5. Queue engine selects the first pending item.
-6. UI renders queue screen.
+1. User taps `Start cleaning`.
+2. Permission layer requests media access.
+3. Scanner starts immediately after grant.
+4. Normalized photo records stream into persistence and review state.
+5. Review engine selects the first eligible card.
+6. UI renders the queue while scanning can continue in the background.
 
 ### Review action flow
 
-1. User triggers `Keep`, `Skip`, `Move`, or `Delete candidate`.
-2. Queue engine validates that the item is actionable.
-3. For `Move` or `Delete`, file-ops executes native action.
-4. File-ops returns typed result.
-5. Queue engine commits state transition only after success or explicit safe staging behavior.
-6. Progress state updates.
-7. UI advances or surfaces failure state.
+1. User triggers `Keep`, `Delete`, or `Skip`.
+2. Review engine validates that the item is actionable.
+3. For `Delete`, file-ops performs the native operation after confirmation.
+4. File-ops returns a typed result.
+5. Review engine commits state only after confirmed success.
+6. Reward layer updates counts and storage score.
+7. Persistence saves the new snapshot.
+
+### Undo flow
+
+1. User performs a reversible action.
+2. Review engine stores a short-lived undo entry.
+3. User taps `Undo`.
+4. Review engine restores the prior state.
+5. Reward layer rolls back the relevant counters.
+6. Persistence saves the repaired state.
 
 ### Resume flow
 
 1. App starts.
-2. Persistence layer hydrates last known session.
-3. Permission layer refreshes capability status.
+2. Persistence hydrates last known state.
+3. Permission layer refreshes access state.
 4. App shell decides whether `Resume session` is available.
-5. Queue engine restores the next pending item.
+5. Review engine restores the active card and current session mode.
 
 ## Typed result philosophy
 
-All file operations should return structured results, not booleans.
+All capability-dependent operations should return structured results, not booleans.
 
 Example direction:
 
 ```ts
 export type FileOpResult =
-  | { ok: true; action: 'move' | 'delete' | 'open'; fileId: string; timestamp: string }
-  | { ok: false; action: 'move' | 'delete' | 'open'; fileId: string; errorCode: string; message: string };
+  | { ok: true; action: 'delete' | 'move' | 'open'; fileId: string; timestamp: string }
+  | { ok: false; action: 'delete' | 'move' | 'open'; fileId: string; errorCode: string; message: string };
 ```
 
 This keeps UI behavior explicit and testable.
 
 ## Persistence strategy
 
-Use a local store that can support:
+Use a minimal persistence boundary that can support:
 
-- session metadata
+- app state snapshot
 - file item records
 - action logs
 - settings and preferences
-- source snapshots
+- queue resume metadata
 
-Candidate split:
+Phase 0 and Phase 1 direction:
 
-- Zustand for in-memory session and UI-friendly selectors
-- SQLite for durable persistence and indexed lookup
+- Zustand for in-memory state and selectors
+- AsyncStorage behind a persistence adapter for durable storage
+
+Upgrade to SQLite later only if one of these becomes real:
+
+- queue sizes create noticeable hydration cost
+- indexed queries become necessary
+- action history and analytics-like state become too expensive to recompute
 
 ## Performance considerations
 
-- large media libraries should be scanned in pages or batches where practical
-- preview loading should avoid decoding huge images eagerly
-- queue selection must not depend on full-array reprocessing every render
-- summary counts should be derived efficiently or cached responsibly
+- scan in pages or batches and stream early results
+- avoid a blocking full-library wait before showing the first card
+- apply default sort rules during normalization so render-time work stays small
+- avoid eager full-resolution image decoding
+- keep selectors focused on the active card and nearby stack items
 
 ## Failure handling requirements
 
 - permission failure and operation failure must be distinct states
 - failed file operations must log enough context for debugging
-- state updates should be transactional enough to avoid phantom success
-- a crash or forced close should not mark unfinished destructive actions as completed
+- state updates must avoid phantom success
+- a crash or force close must not mark unfinished destructive actions as complete
 
 ## Capability boundaries
 
 The system must recognize these boundaries early:
 
-- not every Android source supports the same move/delete semantics
-- broad arbitrary folder access may remain limited or future-scoped
-- document lane behavior may differ materially from media lane behavior
-- delete semantics can vary by source and platform version
+- delete semantics may vary by Android version and asset access path
+- post-delete undo is not safe to promise unless platform behavior truly supports restore
+- move is a later, slower secondary action, not part of the primary loop
+- document-lane behavior remains materially different from the photos lane
 
 ## Architectural anti-patterns to avoid
 
+- designing for multiple lanes before the photos loop feels great
+- forcing a dedicated scan screen for trivial scans
+- keeping separate sources, sessions, and database layers before they are needed
 - UI directly calling native APIs without a service boundary
-- file status being mutated in multiple unrelated layers
-- optimistic destructive success without verification
-- route screens accumulating business logic
-- broad abstraction before the first vertical slice proves itself
+- storing the same truth in multiple competing status systems

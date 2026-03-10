@@ -2,116 +2,139 @@
 
 ## Design mission
 
-The design system for FileSwipe should make cleanup feel light, focused, and satisfying without weakening the user's sense of control.
+Make cleanup feel fast enough to start, safe enough to trust, and rewarding enough to repeat.
 
 ## Product principles
 
-1. Start fast.
-2. Stay visually satisfying.
-3. Be honest about permissions.
-4. Make destructive actions safe.
-5. Keep progress visible.
-6. Recover gracefully from failures.
+1. Get to the first swipe fast.
+2. Let the photo do most of the work.
+3. Reduce the core loop to obvious choices.
+4. Reward progress without becoming noisy.
+5. Use reversibility where it is honest.
+6. Keep one-thumb usage comfortable.
 
 ## Experience pillars
 
-## 1. Clarity before cleverness
+## 1. Speed before setup
 
-Every important step should be understandable in a few seconds. The product should not hide core behavior behind tricks, icon-only gestures, or clever animation.
+The product should not make the user work through extra screens before they see value. V1 starts with photos only, so the happy path is:
 
-## 2. Momentum without recklessness
+- welcome
+- native permission
+- queue
 
-The app should feel quick, but not twitchy. Users should sense speed during review while still feeling protected around risky actions.
+Anything beyond that must justify its existence.
 
-## 3. Trust through explicit feedback
+## 2. Two strong actions beat five weak ones
 
-Whenever the app touches a file, the user should know:
+The queue is not a toolbar. It is a decision loop. The interface should make `Keep` and `Delete` obvious, while `Skip` stays available without fighting for visual weight.
 
-- what action was attempted
-- whether it worked
-- what state the file is now in
+That means:
 
-## 4. Small wins matter
+- no five-button bottom bar
+- no primary `Move` action in the queue
+- no `Open` button competing with the decision actions
 
-Cleanup is emotionally draining. The UX should create a loop of tiny completions:
+## 3. The photo is the hero
 
-- one decision
-- one visible progress increment
-- one less item in the backlog
+Users decide based on the image first. Chrome should support the decision, not dominate it.
 
-## 5. One-handed usability
+That means:
 
-The review loop should be comfortable on tall Android phones:
+- large full-bleed preview card
+- only the most useful metadata visible by default
+- no noisy status chips on the main card
 
-- primary actions near thumb reach
-- dense controls avoided
-- scrolling minimized during core review
+## 4. Progress should feel like a score
+
+Cleanup is easier to continue when progress feels tangible. The interface should turn abstract effort into visible reward:
+
+- reviewed count
+- remaining count
+- storage freed
+- quick session goal
+- milestones that appear briefly and then get out of the way
+
+## 5. Trust comes from clarity plus reversibility
+
+Users move faster when the product feels careful. Delete needs an explicit confirm step. Reversible decisions need undo. Every operation needs a truthful result.
+
+## 6. Energy in short bursts
+
+The app should feel alive, not hyperactive. Motion, haptics, and milestone feedback should create rhythm and satisfaction without turning the app into a casino.
 
 ## UX tone
 
 - playful utility
-- clean and modern
+- premium but grounded
 - tactile and responsive
-- rewarding without being noisy
-- calm when things go wrong
+- upbeat without being childish
+- calm when risk or failure appears
 
 ## Design guardrails
 
 - No deceptive gamification that hides destructive risk.
+- No separate setup screens unless they remove real confusion.
 - No fake file-manager visuals implying unsupported scope.
-- No empty "success" states unless the system actually confirmed success.
-- No overstuffed queue screen with secondary data fighting the preview.
-- No forcing gesture-only interaction.
+- No overloaded card layouts that compete with the photo.
+- No gesture-only interaction.
+- No reward effects that interrupt rapid swiping.
 
 ## Information hierarchy
 
-On most screens, the information hierarchy should be:
+On the queue screen, the hierarchy should be:
 
-1. What screen am I on and what am I doing?
-2. What is the single next action?
-3. What progress have I already made?
-4. What secondary details matter if I look closer?
+1. The current photo
+2. The next obvious action
+3. Progress and score
+4. Secondary details and filters
 
 ## Content design rules
 
-- Use short labels for core actions: `Keep`, `Move`, `Delete`, `Skip`, `Open`
+- Use short labels for core actions: `Keep`, `Delete`, `Skip`
+- Treat card tap as `Open preview`, not a separate CTA
+- Reserve `Move` for a later secondary menu
 - Avoid technical jargon in the main flow
-- Use supportive copy for failure states
-- Explain limits before the user hits them where possible
+- Use supportive, factual copy for warnings and failures
 
 Examples:
 
-- good: `Permission needed to scan photos`
-- good: `Move failed. Try again.`
+- good: `Start cleaning`
+- good: `Delete this photo from your device?`
+- good: `Permission needed to load your photos`
+- bad: `Select a supported source`
 - bad: `Unhandled storage exception`
 
 ## Progress philosophy
 
-Progress should always feel visible, but never naggy.
+Progress should be visible on every card without becoming stressful.
 
 Preferred signals:
 
 - reviewed count
-- remaining count
-- progress ring or bar
-- streak or session goal as optional reinforcement
+- remaining count or fraction
+- progress ring
+- storage freed counter
+- quick goal completion state
 
 Avoid:
 
-- pressure-heavy productivity language
 - fake urgency
-- aggressive badge spam
+- productivity guilt language
+- reward spam on every single action
 
 ## Destructive action philosophy
 
-Delete is intentionally heavier than other actions.
+Delete must feel intentional, not scary.
 
 The UI should communicate that through:
 
-- distinct warning color
-- deliberate confirmation sheet
-- slightly stronger haptic or motion treatment if enabled
-- explicit result feedback after confirmation
+- a clear left-swipe warning state
+- a factual confirmation sheet
+- stronger warning haptic than `Keep`
+- explicit post-result feedback
+
+The product should not force a staging concept the user never asked for.
 
 ## Failure handling philosophy
 
@@ -119,30 +142,42 @@ When something fails:
 
 - keep the file in a safe state
 - explain the failure in plain language
-- provide the next possible action
-- do not erase context or reset the session unexpectedly
+- preserve queue context
+- provide the next action
+- never trade clarity for momentum
 
 ## Motion guidelines
 
-- card movement should feel tactile and responsive
-- spring-back on cancelled swipe should be smooth and quick
-- milestone celebrations should be brief and occasional
-- motion should reinforce intention, not distract from it
+- card movement should feel physical and responsive
+- cancelled drags should spring back quickly
+- next-card transitions should keep rhythm high
+- milestone celebrations should be brief and rare enough to stay special
+
+## Haptic guidelines
+
+- `Keep`: light confirmation tap
+- `Delete` confirm: medium warning tap
+- `Skip`: minimal or no haptic
+- milestone: short double pulse
+- error: distinct error pattern
+
+Haptics should be on by default and configurable in settings.
 
 ## Accessibility principles
 
-- button alternatives for all gestures
+- button or link alternatives for all gestures
 - high text contrast over previews
-- visible focus or pressed states
-- large touch targets
-- color plus label or icon support for meaning
+- large touch targets in the bottom action dock
+- visible labels alongside icons
+- motion and haptic controls available in settings
 
 ## Design review checklist
 
 Before accepting a UI change, ask:
 
-- does the next step feel obvious?
-- is the primary action easy to reach one-handed?
+- can a new user reach the first swipe quickly?
+- are there only two truly primary actions on the queue?
+- does the photo remain the visual hero?
+- does progress feel rewarding and easy to read?
 - is destructive behavior explicit enough?
-- would a first-time user understand the permission implication?
-- does the interface reduce friction or just add flair?
+- would this still feel clear if gestures were unavailable?
