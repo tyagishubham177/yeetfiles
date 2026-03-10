@@ -1,0 +1,64 @@
+name: PR Safety
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches-ignore:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  safety-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure no merge conflict markers are committed
+        shell: bash
+        run: |
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' . \
+            --exclude-dir=.git \
+            --exclude-dir=node_modules; then
+            echo "Merge conflict markers found."
+            exit 1
+          fi
+
+      - name: Block committed environment files
+        shell: bash
+        run: |
+          blocked_files=$(find . -type f \( -name ".env" -o -name ".env.*" \) \
+            -not -path "./.git/*" \
+            -not -path "./node_modules/*")
+
+          if [ -n "$blocked_files" ]; then
+            echo "Tracked env files are not allowed:"
+            echo "$blocked_files"
+            exit 1
+          fi
+
+      - name: Block oversized files
+        shell: bash
+        run: |
+          oversized=$(find . -type f \
+            -not -path "./.git/*" \
+            -not -path "./node_modules/*" \
+            -size +5M)
+
+          if [ -n "$oversized" ]; then
+            echo "Files above 5 MB must not be committed directly:"
+            echo "$oversized"
+            exit 1
+          fi
+
+      - name: Ensure workflow files are valid YAML
+        shell: bash
+        run: |
+          ruby -e "require 'yaml'; Dir['.github/workflows/*.{yml,yaml}'].each { |path| YAML.load_file(path) }"

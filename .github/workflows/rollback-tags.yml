@@ -1,0 +1,61 @@
+name: Rollback Tags
+
+on:
+  schedule:
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rotate-tags:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Create daily rollback tag
+        shell: bash
+        run: |
+          tag_name="rollback-$(date -u +%Y-%m-%d)"
+          git tag -f "$tag_name"
+          git push origin "refs/tags/$tag_name" --force
+
+      - name: Delete old rollback tags but keep the newest five
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          gh api "repos/$REPO/git/matching-refs/tags/rollback-" > tags.json
+
+          python - <<'PY'
+          import json
+          import subprocess
+          from datetime import datetime, timedelta, timezone
+
+          with open('tags.json', 'r', encoding='utf-8') as handle:
+              refs = json.load(handle)
+
+          def parse_tag(ref):
+              name = ref['ref'].split('/')[-1]
+              stamp = name.removeprefix('rollback-')
+              date_value = datetime.strptime(stamp, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+              return {'name': name, 'date': date_value}
+
+          tags = sorted((parse_tag(ref) for ref in refs), key=lambda item: item['date'], reverse=True)
+          keep_names = {item['name'] for item in tags[:5]}
+          cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+          for tag in tags[5:]:
+              if tag['name'] in keep_names:
+                  continue
+              if tag['date'] >= cutoff:
+                  continue
+              subprocess.run(['git', 'push', 'origin', f":refs/tags/{tag['name']}"], check=True)
+          PY
