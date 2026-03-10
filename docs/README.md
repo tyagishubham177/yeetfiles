@@ -1,17 +1,17 @@
 # FileSwipe Docs Index
 
-This folder is the project source of truth for FileSwipe while the app is still being shaped.
+This folder is the project source of truth for FileSwipe while the app is being shaped.
 
 ## Why this docs set exists
 
-The product sounds simple on the surface, but it sits in a risky space:
+FileSwipe sounds simple, but its quality depends on getting a few first principles right:
 
-- it touches user files
-- it depends on Android permissions and platform limits
-- it can lose trust fast if move/delete behavior is unclear
-- it needs a satisfying UX without pretending unsupported capabilities exist
+- file cleanup must feel fast enough to start
+- destructive actions must feel safe enough to trust
+- the loop must feel rewarding enough to repeat
+- Android capability limits must stay visible in product copy and architecture
 
-Because of that, the project is starting with a detailed written blueprint before the codebase grows.
+These docs now reflect a tighter product stance: fewer gates, fewer core actions, stronger reward loops, and less early overengineering.
 
 ## Reading order
 
@@ -35,7 +35,8 @@ Because of that, the project is starting with a detailed written blueprint befor
 3. [api-notes.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/api-notes.md)
 4. [project-structure.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/project-structure.md)
 5. [phase-plan.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/phase-plan.md)
-6. [next-steps.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/next-steps.md)
+6. [../phase/README.md](D:/Coding%20Projects/Codex%20All/YeetFiles/phase/README.md)
+7. [next-steps.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/next-steps.md)
 
 ### Quality and delivery
 
@@ -45,21 +46,34 @@ Because of that, the project is starting with a detailed written blueprint befor
 4. [codex-rules.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/codex-rules.md)
 5. [agents.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/agents.md)
 
+## Glossary
+
+- `FileSwipe`: the product name used in UI and product planning
+- `YeetFiles`: the repository codename only
+- `lane`: a future high-level content area such as photos or documents
+- `photos lane`: the only user-facing lane in V1
+- `bucket`: a lightweight category used for faster cleanup, such as screenshots, camera, or downloads
+- `queue`: the ordered list of reviewable photos for the current session
+- `Quick 10`: a short session mode that caps review at 10 items
+- `Full queue`: the uncapped session mode
+- `source`: an internal capability term, not primary user-facing language in V1
+
 ## Documents in this folder
 
-- `product-brief.md`: concise business and user framing
-- `product-requirements.md`: functional and non-functional requirements
-- `design.md`: product principles and behavior guardrails
-- `ui-design-overview.md`: visual direction and component language
+- `product-brief.md`: concise product framing, scope, and success signals
+- `product-requirements.md`: functional and non-functional requirements for the first build path
+- `design.md`: first-principles UX principles and behavior guardrails
+- `ui-design-overview.md`: visual system, motion, and component direction
 - `screen-specs.md`: per-screen layout and state expectations
 - `interaction-flows.md`: end-to-end user journey logic
-- `technical-architecture.md`: app modules, data flow, and engineering stance
-- `data-model.md`: entity definitions and status transitions
-- `project-structure.md`: planned code and docs layout
-- `phase-plan.md`: phased delivery roadmap
-- `testing.md`: testing philosophy and scenario coverage
-- `manual-test-matrix.md`: practical device test checklist
-- `risk-register.md`: product and implementation risks
+- `technical-architecture.md`: app modules, data flow, and implementation stance
+- `data-model.md`: minimal persisted shapes and transition rules
+- `project-structure.md`: planned code layout for the initial build
+- `phase-plan.md`: summary phase roadmap ordered by UX and trust impact
+- `../phase/`: detailed per-phase playbooks with streams, gates, and exit criteria
+- `testing.md`: test strategy and scenario coverage
+- `manual-test-matrix.md`: practical device validation checklist
+- `risk-register.md`: product, retention, and implementation risks
 - `dev-workflow.md`: expected development and review workflow
 - `api-notes.md`: Android and Expo capability notes
 - `next-steps.md`: immediate implementation sequence
@@ -70,7 +84,8 @@ Because of that, the project is starting with a detailed written blueprint befor
 ## Change discipline
 
 - If product scope changes, update `product-brief.md` and `product-requirements.md`.
-- If UX behavior changes, update `screen-specs.md` or `interaction-flows.md`.
-- If implementation assumptions change, update `technical-architecture.md`, `data-model.md`, or `api-notes.md`.
-- If milestone scope shifts, update `phase-plan.md` and `next-steps.md`.
+- If the core loop, action model, or reward model changes, update `design.md`, `screen-specs.md`, and `interaction-flows.md`.
+- If persistence or state shape changes, update `technical-architecture.md`, `data-model.md`, and `project-structure.md`.
+- If phase ordering changes, update `phase-plan.md`, the relevant file in `../phase/`, and `next-steps.md`.
+- If wording changes create new product terms, update this glossary.
 - Do not leave docs silently stale after a code change.

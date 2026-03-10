@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how the project should be advanced from its docs-first starting point into a working Expo app without losing clarity or trust.
+This document defines how the project should move from docs-first planning into a working Expo app without losing clarity, trust, or product energy.
 
 ## Working style
 
@@ -11,6 +11,7 @@ This document defines how the project should be advanced from its docs-first sta
 - prefer vertical slices over broad unfinished frameworks
 - update docs when implementation changes assumptions
 - verify important behavior on a real Android phone early
+- treat first-swipe speed as part of feature quality, not post-hoc polish
 
 ## Branching rules
 
@@ -33,8 +34,9 @@ A good PR for this repo should:
 
 - solve one clear problem
 - keep product scope honest
-- note what was tested
-- call out any remaining capability caveats
+- note what was tested on device
+- mention any remaining capability caveats
+- state whether first-swipe speed or queue clarity changed
 - leave docs aligned with code
 
 ## Environment priorities
@@ -43,18 +45,20 @@ A good PR for this repo should:
 - Android-first iteration path
 - minimal dependency sprawl
 - simple commands over complex build wrappers
+- no infrastructure heavier than the current phase actually needs
 
 ## Verification rule
 
-If a feature depends on native behavior, it is not complete until it has been exercised on a real Android device.
+If a feature depends on native behavior or materially changes the core feel of the queue, it is not complete until it has been exercised on a real Android device.
 
 ## Documentation rule
 
-Any change to scope, UX behavior, platform assumption, or test strategy should update the matching document in `docs/` during the same branch.
+Any change to scope, UX behavior, platform assumption, terminology, or test strategy should update the matching document in `docs/` during the same branch.
 
 ## Anti-patterns for workflow
 
 - coding several phases ahead of the current proof point
-- leaving TODOs in place of critical trust behavior
+- reintroducing setup screens or primary actions the docs removed
+- adding persistence complexity before the simple adapter proves insufficient
 - claiming delete or move support without verified result handling
 - treating emulator-only success as milestone completion

@@ -6,146 +6,157 @@ FileSwipe
 
 ## Repository note
 
-The repository is still named `YeetFiles`, but the product working name for planning and UI copy is `FileSwipe`.
+The repository is still named `YeetFiles`, but the product name for planning and UI copy is `FileSwipe`.
 
 ## One-line pitch
 
-An Android-first mobile app that turns photo and file cleanup into a fast, swipeable review loop for keeping, moving, skipping, and safely deleting files.
+An Android-first photo cleanup app that gets the user from welcome to first swipe in seconds, then turns storage cleanup into a short, satisfying review loop.
 
 ## Core product idea
 
-FileSwipe should feel like the user is clearing a backlog, not managing a file system. The product has to convert a messy, high-friction maintenance task into a short, focused sequence of obvious decisions.
+FileSwipe should feel like clearing a backlog, not operating a file manager. The best version of the product is simple enough to start instantly and rewarding enough to return to.
 
-The key experience is:
+The loop is:
 
-- one file at a time
-- one clear decision at a time
-- instant progress feedback
-- strong trust signals around risky actions
+- one photo at a time
+- two clear primary actions: `Keep` or `Delete`
+- one low-pressure escape hatch: `Skip`
+- live progress that feels like a score, not a report
+- explicit safety around any destructive action
 
 ## Problem statement
 
-People accumulate large volumes of screenshots, duplicates, camera photos, downloads, and random documents. Existing cleanup behavior usually fails for one of three reasons:
+People accumulate screenshots, old camera photos, downloads, and random visual clutter. Cleanup usually fails for four reasons:
 
-1. The system gallery or file manager exposes too much at once.
-2. Cleanup actions feel risky because users are not sure what will happen.
-3. The task is emotionally draining and easy to abandon halfway through.
+1. The entry flow is too slow or too technical.
+2. The UI asks for too many different decisions at once.
+3. Delete feels risky and hard to trust.
+4. The experience feels like work, so people do it once and never come back.
 
 FileSwipe exists to make cleanup:
 
-- less visually overwhelming
-- less technically intimidating
-- easier to continue over multiple short sessions
+- faster to start
+- easier to parse
+- safer to trust
+- more satisfying to repeat
 
 ## Product goal
 
-Make file cleanup feel simple, visual, safe, and satisfying instead of technical and exhausting.
+Make photo cleanup feel quick, safe, and energizing enough that a user will actually come back for another short session.
 
 ## Product vision
 
-In its best form, FileSwipe becomes the "five-minute cleanup loop" for a personal Android device:
+In its best form, FileSwipe becomes the "daily 10" cleanup loop for an Android phone:
 
-- quick to enter
-- rewarding to use
-- honest about what it can and cannot access
-- dependable enough that users trust it with real organization work
+- open fast
+- swipe fast
+- see meaningful progress immediately
+- stop after a short win or keep going when momentum is high
 
 ## Target user
 
 ### Primary user
 
-- Single user
-- Android phone owner
-- Personal utility use only
-- Large or messy photo library
-- Wants visible progress and low mental load
+- single Android phone owner
+- personal utility use only
+- messy photo library
+- wants storage relief without a complex gallery workflow
+- values low friction more than power features
 
 ### Likely behaviors
 
 - has many screenshots and throwaway images
-- postpones cleanup because it feels tedious
-- wants phone storage relief but does not want a complex file-manager workflow
-- is cautious about deleting anything permanently
+- procrastinates cleanup because it feels tedious
+- wants visible progress and quick wins
+- is cautious about permanent deletion
+- often uses utilities in short bursts, not long admin sessions
 
 ### Anti-personas
 
 The first version is not for:
 
-- multi-user/shared device workflows
+- multi-user or shared-device workflows
 - enterprise file management
 - cloud-drive organization
-- power users expecting unrestricted desktop-style folder control
+- power users expecting unrestricted desktop-style folder browsing
 - users who need iOS parity on day one
 
 ## Jobs to be done
 
-- "Help me quickly decide what to keep and what to get rid of."
-- "Help me clean up my photo mess in short sessions without losing track."
-- "Let me organize files without making me navigate deep folders for every action."
-- "Show me that the app is being careful before anything destructive happens."
+- "Help me decide quickly what should stay and what should go."
+- "Help me free storage without making me manage folders."
+- "Give me a cleanup task I can finish in under a minute if I want."
+- "Make delete feel safe enough that I do not freeze."
+- "Show me progress that feels real, not abstract."
 
 ## Core promise
 
-The app should feel like a game loop for digital cleanup while still behaving like a trustworthy utility.
+The app should feel like a playful utility: quick and rewarding like a game loop, but honest and careful like a trusted tool.
 
 ## Trust promise
 
-Trust is the central product asset. The app must:
+Trust is still the central product asset. The app must:
 
-- ask for only the permissions it really needs
+- ask only for the permissions it needs
 - explain limits before failure happens
-- never fake a file move or delete success
+- never fake success for delete, move, or open
 - keep progress after interruption
-- separate staging from irreversible actions where possible
+- make destructive moments deliberate
+- use reversibility where it is actually safe
 
 ## Non-negotiables
 
 - Android-first
-- Native app approach via React Native / Expo
+- Native app approach via React Native and Expo
 - Real device testing
-- Free or near-free development setup
 - Local-first persistence
 - Honest permission handling
 - No silent destructive actions
+- No fake broad file-manager claims
+- A fast first-swipe path is part of product quality, not polish
 
 ## Why native instead of web
 
-A browser-based approach is not a credible fit for the core product loop. FileSwipe needs:
+A browser-based approach is not a credible fit for the core loop. FileSwipe needs:
 
-- direct integration with Android media access flows
-- reliable local storage for session progress
-- better control over thumbnails, previews, and file operation results
-- behavior that is consistent with mobile system permissions
+- Android media permission integration
+- local persistence for session resume
+- responsive previews and gesture handling
+- truthful file-operation behavior grounded in platform capability
 
-The app should be honest about capability. If the platform cannot safely do something, the product should narrow scope instead of pretending.
+If the platform cannot safely do something, the product should narrow scope instead of pretending.
 
 ## V1 product scope
 
 ### In scope
 
-- photos-first review flow
-- supported-source scanning on Android
-- review queue generation
-- actions: `Keep`, `Move`, `Delete candidate`, `Skip`, `Open`
-- local tracking of reviewed vs pending vs newly found files
+- photos-only lane
+- onboarding collapsed to `Welcome -> permission -> queue`
+- queue boot that streams results while scanning
+- actions: `Keep`, `Delete`, `Skip`
+- card tap to open full preview
+- oldest-first default ordering with filter chips
+- `Quick 10` short-session mode plus `Full queue`
+- live reviewed count, remaining count, and storage-freed counter
+- celebratory but restrained milestones and summary screen
 - resume sessions after app restart
-- visible progress and summary stats
-- failure reporting for file operations
+- recent action history and undo for reversible review actions
 
 ### Deliberately simplified in V1
 
-- start with the highest-confidence photo lane
-- keep destination selection understandable
-- prefer explicit review over background automation
-- bias toward safety over aggressive cleanup shortcuts
+- no separate source-selection screen
+- no five-button action toolbar
+- no primary `Move` action in the queue
+- no batch delete review staging model
+- no always-dark onboarding if the system is using light theme
 
 ## V1.5 scope
 
-- duplicate hints
-- large-file bucket
-- similar screenshot grouping
-- better batch actions
-- undo queue for recent actions
+- move as a secondary action from long-press or overflow
+- safer post-action undo expansion if platform capability allows it
+- comparison view for similar photos
+- better shareable end-of-session summary
+- additional smart buckets such as large files
 
 ## Out of scope for V1
 
@@ -155,32 +166,32 @@ The app should be honest about capability. If the platform cannot safely do some
 - multi-user accounts
 - OCR-heavy analysis
 - background full-device intelligence
-- broad unrestricted file-manager claims
-- Play Store hardening for maximum storage access
+- unrestricted arbitrary folder browsing
+- broad document-lane promises
 
 ## Product success signals
 
 ### Early qualitative signals
 
-- user understands what source is being scanned
-- first review action happens quickly after entry
-- session resume feels trustworthy
-- delete flow feels safe, not scary
-- user can describe the app as "easy" rather than "powerful"
+- users understand the app immediately from the welcome screen
+- the first swipe happens quickly on a small real-device library
+- the queue feels easier than using the gallery directly
+- delete feels deliberate, not scary
+- the summary screen feels like a win screen, not a report
 
 ### Early quantitative signals to eventually measure
 
-- time to first file review
-- average files reviewed per session
+- time to first swipe
+- files reviewed per minute
+- storage freed per session
+- completion rate for `Quick 10`
 - session return rate within 7 days
-- share of sessions resumed successfully
-- action failure rate for move/delete
-- queue abandonment rate during permission or scan steps
+- queue abandonment before the first decision
 
 ## Strategic guardrails
 
 - start narrow and reliable
-- do not promise desktop-level file management
+- optimize for momentum before adding power features
 - do not use delight to hide risk
-- prioritize safe completion over clever automation
-- build only what can be tested on real Android devices
+- do not let safety turn into needless extra steps
+- only add complexity after the core loop feels excellent on a real Android phone

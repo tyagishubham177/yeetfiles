@@ -6,10 +6,10 @@ This document keeps the project grounded in realistic Android-native capability 
 
 ## Implementation stance
 
-- start with supported media flows
-- delay broad arbitrary file-manager behavior until proven necessary
-- treat documents as a separate lane with different capability assumptions
-- do not design UX around APIs that the product may not safely have in production
+- start with the photos lane only
+- design the happy path around fast entry, not broad source choice
+- treat move and documents as later, slower capabilities
+- do not design UX around APIs the product may not safely have in production
 
 ## Media access notes
 
@@ -17,15 +17,28 @@ This document keeps the project grounded in realistic Android-native capability 
 
 Good fit for:
 
-- reading supported media assets
-- getting image and media metadata
-- building the initial photo-first queue
+- reading supported photo assets
+- getting image metadata
+- building the initial queue
+- deleting supported media assets when capability is confirmed on target devices
 
 Important implications:
 
 - permission state must be checked before scan and re-scan
-- asset identifiers and deletion behavior may vary by platform and OS version
-- real-device testing is mandatory because simulator behavior can be misleading
+- asset identifiers and delete behavior may vary by Android version
+- scan should happen in pages or batches so the first card can appear quickly
+- real-device testing is mandatory because emulator behavior can mislead
+
+## Queue-boot implications
+
+The app should not wait for a perfect full-library snapshot before showing value.
+
+Working principles:
+
+- start scan immediately after permission grant
+- normalize enough data to render the first card fast
+- keep scan feedback inline when it lasts longer
+- skip a standalone scan screen when the wait is trivial
 
 ## File operation notes
 
@@ -33,73 +46,83 @@ Important implications:
 
 Potentially useful for:
 
-- reading file metadata for supported URIs
-- moving or copying within supported capability boundaries
-- writing logs or exported debug artifacts into app-managed storage
+- reading additional metadata for supported URIs
+- writing logs or debug artifacts into app-managed storage
+- future move flows where capability has been validated
 
 Important implications:
 
-- do not assume every URI returned by other modules behaves the same way
-- move/delete semantics may depend on how the file was accessed
-- a "success" state should only be shown after the operation result is confirmed
+- do not assume every URI behaves the same way
+- move and delete semantics depend on how the file was accessed
+- a success state should only be shown after the operation result is confirmed
+
+## Open and preview behavior
+
+`Open preview` should be treated as a lightweight helper action triggered by card tap.
+
+Guidelines:
+
+- returning from preview must preserve queue position
+- failure to open must not mutate review state
+- preview should stay in-app by default unless a native handoff is clearly better and equally safe
+
+## Delete and undo behavior
+
+Guidelines:
+
+- delete uses a confirmation sheet, not a staged `delete_candidate` state
+- post-delete undo must not be promised unless the platform can truly restore the file
+- keep and skip undo are safe to support early because they only reverse local review state
 
 ## Document lane notes
 
 ### Expo Document Picker
 
-Good fit for:
+Good fit later for:
 
 - explicit user-selected document flows
-- future limited document review lane
+- limited future document review
 
 Important implications:
 
-- document access is not the same as broad device document scanning
-- picked-document workflows should be framed as user-selected scope, not full-device awareness
-- document move/delete behavior may need separate UI and capability handling from media flows
-
-## Open and preview behavior
-
-The `Open` action should be treated as a capability-dependent helper action.
-
-Guidelines:
-
-- returning from open must preserve queue position
-- failure to open should not mutate file review state
-- if native handlers are unavailable, show a clear failure or limited-preview fallback
+- picked-document access is not broad device document scanning
+- document workflows should be framed as user-selected scope, not full-device awareness
+- document move and delete behavior may need separate UI and capability handling from photos
 
 ## Android permission notes
 
-The app should assume permission behavior can differ by Android version and file source.
+The app should assume permission behavior can differ by Android version and asset source.
 
 Working principles:
 
-- permission once granted does not guarantee all later operations succeed
+- permission once granted does not guarantee every later operation succeeds
 - revoked permission must be detected after prior successful use
-- permission-denied UX should stay separate from no-files-found UX
+- permission-denied UX must stay separate from no-files-found UX
 
 ## Capability matrix direction
 
 ### Supported early
 
-- photo/media permission request
-- media scan on supported source
-- image preview card
+- media permission request from the welcome flow
+- streaming photo scan into the queue
+- `Keep`, `Delete`, and `Skip`
+- card tap preview
 - local queue persistence
-- `Keep` and `Skip`
+- storage-freed tracking
 
 ### Supported later with validation
 
-- delete against supported media source
-- move flow with confirmed destination
-- newly found item detection across re-scans
+- move from a secondary menu
+- re-scan with new-file detection
+- comparison view for similar photos
+- stronger summary sharing
 
 ### Future or constrained
 
 - broad document lane
-- richer destination browsing
-- advanced duplicate grouping
-- broad folder-scoped management
+- arbitrary folder-scoped management
+- safe post-delete restore
+- aggressive smart-cleanup automation
 
 ## Guardrails for implementation
 
@@ -107,3 +130,4 @@ Working principles:
 - isolate native API calls behind service modules
 - capture operation errors as structured results
 - document any capability caveat that affects product copy or scope
+- if platform behavior weakens a fun idea, choose honesty over spectacle

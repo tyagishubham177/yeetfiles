@@ -10,6 +10,7 @@ This repo is set up for a single developer working through pull requests into `m
 - Do not force-push to `main`.
 - Do not delete `main`.
 - Keep docs aligned with implementation in the same branch.
+- In PR notes, call out destructive-flow testing and any change to first-swipe speed or queue clarity.
 
 ## What the PR Safety workflow blocks
 
