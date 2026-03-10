@@ -9,25 +9,26 @@ This repo is set up for a single developer working through pull requests into `m
 - Require the `PR Safety` workflow to pass before merging.
 - Do not force-push to `main`.
 - Do not delete `main`.
+- Keep docs aligned with implementation in the same branch.
 
 ## What the PR Safety workflow blocks
 
-- Merge conflict markers accidentally committed into files.
-- Tracked `.env` files.
-- Files larger than 5 MB committed directly to the repo.
-- Broken YAML syntax in GitHub workflow files.
+- merge conflict markers accidentally committed into files
+- tracked `.env` files
+- files larger than 5 MB committed directly to the repo
+- broken YAML syntax in GitHub workflow files
 
 ## Rollback tags
 
-- A daily workflow creates or refreshes a tag named `rollback-YYYY-MM-DD` from the latest `main`.
-- Cleanup removes rollback tags older than 7 days.
-- The newest 5 rollback tags are always kept, even if they are older than 7 days.
+- a daily workflow creates or refreshes a tag named `rollback-YYYY-MM-DD` from the latest `main`
+- cleanup removes rollback tags older than 7 days
+- the newest 5 rollback tags are always kept, even if they are older than 7 days
 
 ## GitHub settings to enable
 
-- Protect `main`.
-- Require a pull request before merging.
-- Require status checks to pass before merging.
-- Select `PR Safety` as a required status check.
-- Disable force pushes.
-- Disable branch deletion.
+- protect `main`
+- require a pull request before merging
+- require status checks to pass before merging
+- select `PR Safety` as a required status check
+- disable force pushes
+- disable branch deletion
