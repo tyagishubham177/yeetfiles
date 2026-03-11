@@ -8,8 +8,10 @@
     "android": "expo start --android",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "tunnel": "powershell -ExecutionPolicy Bypass -File .\\\\scripts\\\\free-expo-port.ps1 && expo start --tunnel --clear",
-    "lan": "powershell -ExecutionPolicy Bypass -File .\\\\scripts\\\\free-expo-port.ps1 && expo start --lan --clear"
+    "tunnel": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --tunnel",
+    "lan": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --lan",
+    "tunnel:clear": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --tunnel --clear",
+    "lan:clear": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --lan --clear"
   },
   "dependencies": {
     "@expo-google-fonts/dm-sans": "0.4.2",
