@@ -12,13 +12,16 @@
     "lan": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --lan",
     "tunnel:clear": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --tunnel --clear",
     "lan:clear": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --lan --clear",
-    "postinstall": "node ./scripts/patch-expo-ngrok-timeout.js"
+    "postinstall": "node ./scripts/patch-expo-ngrok-timeout.js",
+    "dev:android": "expo run:android",
+    "dev:tunnel": "powershell -ExecutionPolicy Bypass -File .\\scripts\\free-expo-port.ps1 && expo start --dev-client --tunnel"
   },
   "dependencies": {
     "@expo-google-fonts/dm-sans": "0.4.2",
     "@expo-google-fonts/space-grotesk": "0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "54.0.33",
+    "expo-dev-client": "~6.0.20",
     "expo-file-system": "19.0.21",
     "expo-font": "14.0.11",
     "expo-media-library": "18.2.1",
