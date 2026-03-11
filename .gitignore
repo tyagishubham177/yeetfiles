@@ -3,6 +3,8 @@ Thumbs.db
 
 .idea/
 .vscode/
+.expo/
+expo-env.d.ts
 
 node_modules/
 dist/

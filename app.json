@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "FileSwipe",
+    "slug": "fileswipe",
+    "scheme": "fileswipe",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.fileswipe.app",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow FileSwipe to scan your photos so you can review them one by one.",
+          "savePhotosPermission": "Allow FileSwipe to delete photos only after you confirm each one."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
