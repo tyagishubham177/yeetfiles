@@ -16,6 +16,11 @@ export function PermissionPanel({ blocked, onRetry, onOpenSettings }: Permission
       <Text style={styles.body}>
         FileSwipe stays local and only reviews your photos on-device. Without access, we cannot build the queue.
       </Text>
+      {blocked ? (
+        <Text style={styles.note}>
+          If this is Expo Go on Android, that environment now blocks full media-library access. Use a development build for the real photo flow.
+        </Text>
+      ) : null}
       <View style={styles.actions}>
         <Button label={blocked ? 'Open settings' : 'Try again'} onPress={blocked ? onOpenSettings : onRetry} />
         {!blocked ? <Button label="Settings" onPress={onOpenSettings} variant="secondary" /> : null}
@@ -44,6 +49,12 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 16,
     lineHeight: 24,
+  },
+  note: {
+    color: '#FFD7C7',
+    fontFamily: typography.medium,
+    fontSize: 14,
+    lineHeight: 22,
   },
   actions: {
     gap: spacing.sm,

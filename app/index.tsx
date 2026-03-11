@@ -1,13 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../src/components/ui/button';
 import { ROUTES } from '../src/constants/routes';
 import { colors, radius, spacing, typography } from '../src/constants/ui-tokens';
+import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../src/features/permissions/permission-service';
 import { formatBytes, formatDuration } from '../src/lib/format';
-import { requestMediaPermissionState } from '../src/features/permissions/permission-service';
 import { selectResumeAvailable, useAppStore } from '../src/store/app-store';
 
 export default function WelcomeScreen() {
@@ -25,6 +25,11 @@ export default function WelcomeScreen() {
       beginQuickSession(resetProgress);
       const permissionState = await requestMediaPermissionState();
       setPermissionState(permissionState);
+
+      if (permissionState === 'blocked') {
+        Alert.alert('Media permission blocked', MEDIA_PERMISSION_BLOCKED_HELP);
+      }
+
       router.replace(ROUTES.queue);
     } finally {
       setBusy(false);

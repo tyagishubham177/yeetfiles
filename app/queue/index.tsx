@@ -13,7 +13,7 @@ import { Button } from '../../src/components/ui/button';
 import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
-import { requestMediaPermissionState } from '../../src/features/permissions/permission-service';
+import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatCompactDate } from '../../src/lib/format';
@@ -63,6 +63,10 @@ export default function QueueScreen() {
   const retryPermission = async () => {
     const nextPermissionState = await requestMediaPermissionState();
     setPermissionState(nextPermissionState);
+
+    if (nextPermissionState === 'blocked') {
+      Alert.alert('Media permission blocked', MEDIA_PERMISSION_BLOCKED_HELP);
+    }
   };
 
   const confirmDelete = async () => {
