@@ -7,7 +7,9 @@ Thumbs.db
 node_modules/
 dist/
 build/
+.expo/
 
 *.log
 .env
 .env.*
+expo-env.d.ts

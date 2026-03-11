@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "FileSwipe Smoke Test",
+    "slug": "fileswipe-smoke-test",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.fileswipe.smoketest",
+      "adaptiveIcon": {
+        "backgroundColor": "#F4EFE7"
+      }
+    }
+  }
+}
