@@ -1,15 +1,6 @@
-import { memo } from 'react';
-import { Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useMemo, useRef } from 'react';
+import { Animated, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  interpolate,
-  interpolateColor,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 
 import { colors, radius, shadows, spacing, typography } from '../../constants/ui-tokens';
 import { formatBytes, formatCompactDate } from '../../lib/format';
@@ -37,56 +28,68 @@ function FileCardComponent({
   onKeepGesture,
   onDeleteGesture,
 }: FileCardProps) {
-  const translateX = useSharedValue(0);
-  const rotate = useSharedValue(0);
-
-  const cardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }, { rotate: `${rotate.value}deg` }],
-  }));
-
-  const tintStyle = useAnimatedStyle(() => {
-    const backgroundColor = interpolateColor(
-      translateX.value,
-      [-SWIPE_THRESHOLD, 0, SWIPE_THRESHOLD],
-      ['rgba(231,111,81,0.32)', 'rgba(0,0,0,0)', 'rgba(46,194,126,0.32)']
-    );
-
-    return {
-      backgroundColor,
-      opacity: interpolate(Math.abs(translateX.value), [0, SWIPE_THRESHOLD], [0, 1]),
-    };
+  const translateX = useRef(new Animated.Value(0)).current;
+  const rotate = translateX.interpolate({
+    inputRange: [-width, 0, width],
+    outputRange: ['-12deg', '0deg', '12deg'],
+    extrapolate: 'clamp',
   });
 
-  const gesture = Gesture.Pan()
-    .enabled(Boolean(current) && !disabled)
-    .onUpdate((event) => {
-      translateX.value = event.translationX;
-      rotate.value = interpolate(event.translationX, [-width, 0, width], [-12, 0, 12]);
-    })
-    .onEnd((event) => {
-      if (event.translationX > SWIPE_THRESHOLD) {
-        translateX.value = withTiming(width * 1.05, { duration: 180 }, (finished) => {
-          if (finished) {
-            translateX.value = 0;
-            rotate.value = 0;
-            runOnJS(onKeepGesture)();
+  const tintOpacity = translateX.interpolate({
+    inputRange: [-SWIPE_THRESHOLD, 0, SWIPE_THRESHOLD],
+    outputRange: [1, 0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const tintColor = translateX.interpolate({
+    inputRange: [-SWIPE_THRESHOLD, 0, SWIPE_THRESHOLD],
+    outputRange: ['rgba(231,111,81,0.32)', 'rgba(0,0,0,0)', 'rgba(46,194,126,0.32)'],
+    extrapolate: 'clamp',
+  });
+
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(Boolean(current) && !disabled)
+        .onUpdate((event) => {
+          translateX.setValue(event.translationX);
+        })
+        .onEnd((event) => {
+          if (event.translationX > SWIPE_THRESHOLD) {
+            Animated.timing(translateX, {
+              toValue: width * 1.05,
+              duration: 180,
+              useNativeDriver: true,
+            }).start(() => {
+              translateX.setValue(0);
+              onKeepGesture();
+            });
+            return;
           }
-        });
-        return;
-      }
 
-      if (event.translationX < -SWIPE_THRESHOLD) {
-        translateX.value = withTiming(-width * 0.25, { duration: 140 }, () => {
-          translateX.value = withSpring(0);
-          rotate.value = withSpring(0);
-        });
-        runOnJS(onDeleteGesture)();
-        return;
-      }
+          if (event.translationX < -SWIPE_THRESHOLD) {
+            Animated.sequence([
+              Animated.timing(translateX, {
+                toValue: -width * 0.25,
+                duration: 140,
+                useNativeDriver: true,
+              }),
+              Animated.spring(translateX, {
+                toValue: 0,
+                useNativeDriver: true,
+              }),
+            ]).start();
+            onDeleteGesture();
+            return;
+          }
 
-      translateX.value = withSpring(0);
-      rotate.value = withSpring(0);
-    });
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }),
+    [current, disabled, onDeleteGesture, onKeepGesture, translateX]
+  );
 
   if (!current) {
     return <View style={styles.placeholder} />;
@@ -100,10 +103,10 @@ function FileCardComponent({
         </View>
       ))}
       <GestureDetector gesture={gesture}>
-        <Animated.View style={[styles.card, cardStyle]}>
+        <Animated.View style={[styles.card, { transform: [{ translateX }, { rotate }] }]}>
           <Pressable onPress={onPress} style={styles.pressable}>
             <Image source={{ uri: current.previewUri }} style={styles.image} resizeMode="cover" />
-            <Animated.View pointerEvents="none" style={[styles.tint, tintStyle]} />
+            <Animated.View pointerEvents="none" style={[styles.tint, { opacity: tintOpacity, backgroundColor: tintColor }]} />
             {showHints ? (
               <View style={styles.hintRow}>
                 <Text style={styles.hintLeft}>Delete</Text>
