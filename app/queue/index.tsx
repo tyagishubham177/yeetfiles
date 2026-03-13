@@ -17,15 +17,16 @@ import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../.
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatCompactDate } from '../../src/lib/format';
-import { selectCurrentFile, selectNextStackItems, selectPendingQueueCount, useAppStore } from '../../src/store/app-store';
+import { selectCurrentFile, useAppStore } from '../../src/store/app-store';
 
 export default function QueueScreen() {
   const router = useRouter();
   useScanBootstrap();
 
   const currentFile = useAppStore(selectCurrentFile);
-  const nextItems = useAppStore(selectNextStackItems);
-  const pendingQueueCount = useAppStore(selectPendingQueueCount);
+  const currentFileId = useAppStore((state) => state.currentFileId);
+  const queueOrder = useAppStore((state) => state.queueOrder);
+  const filesById = useAppStore((state) => state.filesById);
   const permissionState = useAppStore((state) => state.permissionState);
   const sessionStats = useAppStore((state) => state.sessionStats);
   const sessionSummary = useAppStore((state) => state.sessionSummary);
@@ -49,6 +50,21 @@ export default function QueueScreen() {
     }
   }, [router, sessionSummary]);
 
+  const nextItems = useMemo(() => {
+    return queueOrder
+      .filter((fileId) => fileId !== currentFileId)
+      .map((fileId) => filesById[fileId])
+      .filter((file) => Boolean(file) && (file.status === 'pending' || file.status === 'skipped'))
+      .slice(0, 2);
+  }, [currentFileId, filesById, queueOrder]);
+
+  const pendingQueueCount = useMemo(() => {
+    return queueOrder.reduce((count, fileId) => {
+      const file = filesById[fileId];
+      return file && (file.status === 'pending' || file.status === 'skipped') ? count + 1 : count;
+    }, 0);
+  }, [filesById, queueOrder]);
+
   const remainingCount = useMemo(() => {
     if (!targetCount) {
       return 0;
@@ -56,6 +72,26 @@ export default function QueueScreen() {
 
     return Math.max(targetCount - sessionStats.reviewedCount, 0);
   }, [sessionStats.reviewedCount, targetCount]);
+
+  const scanProgressRatio = useMemo(() => {
+    if (!scanProgressTotal || scanProgressTotal <= 0) {
+      return 0.08;
+    }
+
+    return Math.min(Math.max(scanProgressLoaded / scanProgressTotal, 0.08), 1);
+  }, [scanProgressLoaded, scanProgressTotal]);
+
+  const scanProgressLabel = useMemo(() => {
+    if (scanProgressTotal) {
+      return `${scanProgressLoaded} of ${scanProgressTotal} photos checked`;
+    }
+
+    if (scanProgressLoaded > 0) {
+      return `${scanProgressLoaded} photos checked so far`;
+    }
+
+    return 'Preparing your photo scan';
+  }, [scanProgressLoaded, scanProgressTotal]);
 
   const blocked = permissionState === 'blocked';
   const permissionMissing = permissionState === 'denied' || permissionState === 'blocked';
@@ -118,7 +154,7 @@ export default function QueueScreen() {
             <View style={styles.scanRow}>
               <Text style={styles.scanText}>
                 {scanState === 'scanning'
-                  ? `Scanning in background${scanProgressTotal ? ` · ${scanProgressLoaded}/${scanProgressTotal}` : ` · ${scanProgressLoaded}`}`
+                  ? `Scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
                   : 'Queue is live'}
               </Text>
               {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
@@ -138,10 +174,22 @@ export default function QueueScreen() {
           </>
         ) : scanState === 'scanning' ? (
           <View style={styles.emptyWrap}>
-            <EmptyState
-              title="Pulling in your first cards"
-              body="The first real photo should appear before the full scan ends. Keep this screen open for a few seconds."
-            />
+            <View style={styles.scanLoadingCard}>
+              <Text style={styles.scanLoadingEyebrow}>Scan in progress</Text>
+              <Text style={styles.scanLoadingTitle}>{scanProgressLabel}</Text>
+              <Text style={styles.scanLoadingBody}>
+                We are building your queue now. As soon as the first photo is ready, it will replace this panel.
+              </Text>
+              <View style={styles.scanProgressTrack}>
+                <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%` }]} />
+              </View>
+              <Text style={styles.scanLoadingHint}>
+                {scanProgressTotal ? `${Math.round(scanProgressRatio * 100)}% complete` : 'This can take longer on larger libraries.'}
+              </Text>
+              <View style={styles.scanLoadingActions}>
+                <Button label="Restart scan" onPress={requestRescan} variant="secondary" />
+              </View>
+            </View>
           </View>
         ) : (
           <View style={styles.emptyWrap}>
@@ -159,7 +207,7 @@ export default function QueueScreen() {
           <View style={styles.sheetContext}>
             <Text style={styles.sheetContextTitle}>{currentFile.name}</Text>
             <Text style={styles.sheetContextBody}>
-              {formatCompactDate(currentFile.createdAt)} · {formatBytes(currentFile.sizeBytes)}
+              {formatCompactDate(currentFile.createdAt)} / {formatBytes(currentFile.sizeBytes)}
             </Text>
           </View>
         ) : null}
@@ -272,6 +320,53 @@ const styles = StyleSheet.create({
   emptyWrap: {
     flex: 1,
     minHeight: 500,
+    justifyContent: 'center',
+  },
+  scanLoadingCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.cardGlass,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  scanLoadingEyebrow: {
+    color: 'rgba(249,250,251,0.7)',
+    fontFamily: typography.medium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  scanLoadingTitle: {
+    color: colors.white,
+    fontFamily: typography.display,
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  scanLoadingBody: {
+    color: 'rgba(249,250,251,0.82)',
+    fontFamily: typography.body,
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  scanProgressTrack: {
+    height: 10,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  scanProgressFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: '#F3B43F',
+  },
+  scanLoadingHint: {
+    color: 'rgba(249,250,251,0.7)',
+    fontFamily: typography.medium,
+    fontSize: 13,
+  },
+  scanLoadingActions: {
+    marginTop: spacing.xs,
   },
   sheetTitle: {
     color: colors.ink,

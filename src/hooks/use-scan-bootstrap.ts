@@ -1,4 +1,4 @@
-import { startTransition, useEffect } from 'react';
+import { startTransition, useEffect, useRef } from 'react';
 
 import { getMediaPermissionState } from '../features/permissions/permission-service';
 import { scanPhotoLibrary } from '../features/scanner/media-scan-service';
@@ -6,14 +6,13 @@ import { useAppStore } from '../store/app-store';
 
 export function useScanBootstrap() {
   const permissionState = useAppStore((state) => state.permissionState);
-  const queueLength = useAppStore((state) => state.queueOrder.length);
-  const scanState = useAppStore((state) => state.scanState);
   const scanNonce = useAppStore((state) => state.scanNonce);
   const beginScan = useAppStore((state) => state.beginScan);
   const receiveScanChunk = useAppStore((state) => state.receiveScanChunk);
   const completeScan = useAppStore((state) => state.completeScan);
   const failScan = useAppStore((state) => state.failScan);
   const setPermissionState = useAppStore((state) => state.setPermissionState);
+  const scanInFlightRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -42,11 +41,14 @@ export function useScanBootstrap() {
       return;
     }
 
-    if (queueLength > 0 || scanState === 'scanning') {
+    const state = useAppStore.getState();
+
+    if (state.queueOrder.length > 0 || state.scanState === 'scanning' || scanInFlightRef.current) {
       return;
     }
 
-    let active = true;
+    let cancelled = false;
+    scanInFlightRef.current = true;
 
     void (async () => {
       beginScan();
@@ -54,7 +56,7 @@ export function useScanBootstrap() {
       try {
         await scanPhotoLibrary({
           onChunk: (items, progress) => {
-            if (!active) {
+            if (cancelled) {
               return;
             }
 
@@ -64,18 +66,20 @@ export function useScanBootstrap() {
           },
         });
 
-        if (active) {
+        if (!cancelled) {
           completeScan();
         }
       } catch (error) {
-        if (active) {
+        if (!cancelled) {
           failScan(error instanceof Error ? error.message : 'The media scan failed.');
         }
+      } finally {
+        scanInFlightRef.current = false;
       }
     })();
 
     return () => {
-      active = false;
+      cancelled = true;
     };
-  }, [beginScan, completeScan, failScan, permissionState, queueLength, receiveScanChunk, scanNonce, scanState]);
+  }, [beginScan, completeScan, failScan, permissionState, receiveScanChunk, scanNonce]);
 }
