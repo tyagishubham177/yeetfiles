@@ -7,8 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionDock } from '../../src/components/review/action-dock';
 import { EmptyState } from '../../src/components/review/empty-state';
 import { FileCard } from '../../src/components/review/file-card';
+import { FilterChipRow } from '../../src/components/review/filter-chip-row';
+import { MilestoneBanner } from '../../src/components/review/milestone-banner';
 import { PermissionPanel } from '../../src/components/review/permission-panel';
 import { ProgressHeader } from '../../src/components/review/progress-header';
+import { UndoToast } from '../../src/components/review/undo-toast';
 import { Button } from '../../src/components/ui/button';
 import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
@@ -17,16 +20,28 @@ import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../.
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatCompactDate } from '../../src/lib/format';
-import { selectCurrentFile, useAppStore } from '../../src/store/app-store';
+import {
+  getFilterLabel,
+  getQuickSessionLabel,
+  getSortLabel,
+  selectCurrentFile,
+  selectFilterCounts,
+  selectNextStackItems,
+  selectPendingQueueCount,
+  selectTopUndoEntry,
+  selectVisibleQueueCount,
+  useAppStore,
+} from '../../src/store/app-store';
+import type { FilterType, SortMode } from '../../src/types/file-item';
+
+const SORT_OPTIONS: SortMode[] = ['oldest_first', 'newest_first', 'largest_first', 'random'];
 
 export default function QueueScreen() {
   const router = useRouter();
   useScanBootstrap();
 
   const currentFile = useAppStore(selectCurrentFile);
-  const currentFileId = useAppStore((state) => state.currentFileId);
-  const queueOrder = useAppStore((state) => state.queueOrder);
-  const filesById = useAppStore((state) => state.filesById);
+  const nextItems = useAppStore(selectNextStackItems);
   const permissionState = useAppStore((state) => state.permissionState);
   const sessionStats = useAppStore((state) => state.sessionStats);
   const sessionSummary = useAppStore((state) => state.sessionSummary);
@@ -35,7 +50,20 @@ export default function QueueScreen() {
   const scanProgressTotal = useAppStore((state) => state.scanProgressTotal);
   const scanError = useAppStore((state) => state.scanError);
   const targetCount = useAppStore((state) => state.targetCount);
+  const activeFilter = useAppStore((state) => state.activeFilter);
+  const sortMode = useAppStore((state) => state.sortMode);
+  const activeMilestone = useAppStore((state) => state.activeMilestone);
+  const pendingQueueCount = useAppStore(selectPendingQueueCount);
+  const visibleQueueCount = useAppStore(selectVisibleQueueCount);
+  const filterCounts = useAppStore(selectFilterCounts);
+  const topUndoEntry = useAppStore(selectTopUndoEntry);
+  const undoEntries = useAppStore((state) => state.undoEntries);
   const setPermissionState = useAppStore((state) => state.setPermissionState);
+  const setActiveFilter = useAppStore((state) => state.setActiveFilter);
+  const setSortMode = useAppStore((state) => state.setSortMode);
+  const undoLastAction = useAppStore((state) => state.undoLastAction);
+  const pruneExpiredUndoEntries = useAppStore((state) => state.pruneExpiredUndoEntries);
+  const dismissMilestone = useAppStore((state) => state.dismissMilestone);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const recordPreviewOpen = useAppStore((state) => state.recordPreviewOpen);
   const settings = useAppStore((state) => state.settings);
@@ -49,21 +77,6 @@ export default function QueueScreen() {
       router.replace(ROUTES.summary);
     }
   }, [router, sessionSummary]);
-
-  const nextItems = useMemo(() => {
-    return queueOrder
-      .filter((fileId) => fileId !== currentFileId)
-      .map((fileId) => filesById[fileId])
-      .filter((file) => Boolean(file) && (file.status === 'pending' || file.status === 'skipped'))
-      .slice(0, 2);
-  }, [currentFileId, filesById, queueOrder]);
-
-  const pendingQueueCount = useMemo(() => {
-    return queueOrder.reduce((count, fileId) => {
-      const file = filesById[fileId];
-      return file && (file.status === 'pending' || file.status === 'skipped') ? count + 1 : count;
-    }, 0);
-  }, [filesById, queueOrder]);
 
   const remainingCount = useMemo(() => {
     if (!targetCount) {
@@ -95,6 +108,33 @@ export default function QueueScreen() {
 
   const blocked = permissionState === 'blocked';
   const permissionMissing = permissionState === 'denied' || permissionState === 'blocked';
+  const sessionLabel = getQuickSessionLabel((targetCount as 10 | 25 | 50 | null) ?? 10);
+  const sortLabel = getSortLabel(sortMode);
+  const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
+
+  useEffect(() => {
+    if (!topUndoEntry) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      pruneExpiredUndoEntries();
+    }, 5200);
+
+    return () => clearTimeout(timeoutId);
+  }, [pruneExpiredUndoEntries, topUndoEntry]);
+
+  useEffect(() => {
+    if (!activeMilestone) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      dismissMilestone();
+    }, 2400);
+
+    return () => clearTimeout(timeoutId);
+  }, [activeMilestone, dismissMilestone]);
 
   const retryPermission = async () => {
     const nextPermissionState = await requestMediaPermissionState();
@@ -140,12 +180,30 @@ export default function QueueScreen() {
           reviewedCount={sessionStats.reviewedCount}
           remainingCount={remainingCount}
           pendingQueueCount={pendingQueueCount}
+          visibleQueueCount={visibleQueueCount}
           storageFreedBytes={sessionStats.storageFreedBytes}
           targetCount={targetCount}
+          sessionLabel={sessionLabel}
+          sortLabel={sortLabel}
           isScanning={scanState === 'scanning'}
           scanProgressLoaded={scanProgressLoaded}
           scanProgressTotal={scanProgressTotal}
         />
+
+        <FilterChipRow activeFilter={activeFilter} counts={filterCounts} onSelect={(filter) => setActiveFilter(filter)} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
+          {SORT_OPTIONS.map((option) => {
+            const selected = option === sortMode;
+
+            return (
+              <Pressable key={option} accessibilityRole="button" onPress={() => setSortMode(option)} style={[styles.sortChip, selected && styles.sortChipSelected]}>
+                <Text style={[styles.sortChipLabel, selected && styles.sortChipLabelSelected]}>{getSortLabel(option)}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {activeMilestone ? <MilestoneBanner milestone={activeMilestone} /> : null}
 
         {permissionMissing ? (
           <PermissionPanel blocked={blocked} onRetry={() => void retryPermission()} onOpenSettings={() => void Linking.openSettings()} />
@@ -170,8 +228,24 @@ export default function QueueScreen() {
                 onDeleteGesture={() => setDeleteSheetOpen(true)}
               />
             </View>
-            <ActionDock onDelete={() => setDeleteSheetOpen(true)} onKeep={keepCurrent} onSkip={skipCurrent} disabled={isDeleting} />
+            <ActionDock
+              onDelete={() => setDeleteSheetOpen(true)}
+              onKeep={keepCurrent}
+              onSkip={skipCurrent}
+              onUndo={topUndoEntry ? undoLastAction : undefined}
+              undoCount={undoEntries.length}
+              disabled={isDeleting}
+            />
           </>
+        ) : filterEmpty ? (
+          <View style={styles.emptyWrap}>
+            <EmptyState
+              title={`No ${getFilterLabel(activeFilter).toLowerCase()} cards left`}
+              body="Try another filter or switch back to all photos to keep the session moving."
+              actionLabel="Show all photos"
+              onAction={() => setActiveFilter('all' as FilterType)}
+            />
+          </View>
         ) : scanState === 'scanning' ? (
           <View style={styles.emptyWrap}>
             <View style={styles.scanLoadingCard}>
@@ -197,6 +271,12 @@ export default function QueueScreen() {
           </View>
         )}
       </ScrollView>
+
+      {topUndoEntry ? (
+        <View style={styles.undoToastWrap}>
+          <UndoToast entry={topUndoEntry} onUndo={undoLastAction} />
+        </View>
+      ) : null}
 
       <Sheet visible={deleteSheetOpen} onClose={() => setDeleteSheetOpen(false)}>
         <Text style={styles.sheetTitle}>Delete this photo permanently?</Text>
@@ -367,6 +447,31 @@ const styles = StyleSheet.create({
   },
   scanLoadingActions: {
     marginTop: spacing.xs,
+  },
+  sortRow: {
+    gap: spacing.sm,
+    paddingRight: spacing.md,
+  },
+  sortChip: {
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  sortChipSelected: {
+    backgroundColor: 'rgba(60,145,230,0.28)',
+  },
+  sortChipLabel: {
+    color: 'rgba(249,250,251,0.78)',
+    fontFamily: typography.medium,
+    fontSize: 13,
+  },
+  sortChipLabelSelected: {
+    color: colors.white,
+  },
+  undoToastWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
   },
   sheetTitle: {
     color: colors.ink,

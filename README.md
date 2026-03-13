@@ -9,7 +9,7 @@ This repository is still docs-first, but the direction is now much sharper: get 
 - Repo codename: `YeetFiles`
 - Product working name: `FileSwipe`
 - Branching model: work happens on `codex/` branches into `main`
-- Current delivery target: Phase 0 first-swipe feasibility slice
+- Current delivery target: Phase 1 trust and reward vertical slice
 - Primary platform: Android only
 
 ## Running On Android
@@ -107,14 +107,12 @@ Start here:
 
 ## Near-term milestone
 
-Phase 0 proves the product can deliver a believable first-swipe loop on a real Android phone:
+Phase 1 turns the proven first-swipe loop into something people would plausibly return to:
 
-- request photo/media permission from the welcome flow
-- scan photos and stream results into the queue
-- render a premium card stack UI
-- support `Keep`, `Delete`, and `Skip`
-- show live reviewed count and storage-freed progress
-- persist local state and restore the queue after restart
+- safe undo for reversible review actions
+- stronger progress and reward feedback
+- filter chips and session target choices that persist
+- a more celebratory session summary without weakening delete trust
 
 ## Repo rule of thumb
 

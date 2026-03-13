@@ -1,5 +1,6 @@
 import { durationFrom, nowIso } from '../../lib/time';
 import type { ReviewAction } from '../../types/action-log';
+import type { QuickSessionTarget } from '../../types/file-item';
 import type { SessionStats, SessionSummary } from '../../types/app-state';
 
 export function createEmptySessionStats(): SessionStats {
@@ -41,6 +42,33 @@ export function applySuccessfulAction(
   return next;
 }
 
+export function rollbackSuccessfulAction(
+  stats: SessionStats,
+  action: ReviewAction,
+  bytesDelta: number = 0
+): SessionStats {
+  const next = {
+    ...stats,
+    reviewedCount: Math.max(stats.reviewedCount - 1, 0),
+    lastUpdatedAt: nowIso(),
+  };
+
+  if (action === 'keep') {
+    next.keptCount = Math.max(stats.keptCount - 1, 0);
+  }
+
+  if (action === 'skip') {
+    next.skippedCount = Math.max(stats.skippedCount - 1, 0);
+  }
+
+  if (action === 'delete') {
+    next.deletedCount = Math.max(stats.deletedCount - 1, 0);
+    next.storageFreedBytes = Math.max(stats.storageFreedBytes - Math.max(bytesDelta, 0), 0);
+  }
+
+  return next;
+}
+
 export function getRemainingForTarget(stats: SessionStats, targetCount: number | null): number {
   if (!targetCount) {
     return 0;
@@ -49,7 +77,11 @@ export function getRemainingForTarget(stats: SessionStats, targetCount: number |
   return Math.max(targetCount - stats.reviewedCount, 0);
 }
 
-export function buildSessionSummary(sessionId: string, stats: SessionStats): SessionSummary {
+export function buildSessionSummary(
+  sessionId: string,
+  stats: SessionStats,
+  targetCount: QuickSessionTarget | null
+): SessionSummary {
   const endedAt = nowIso();
 
   return {
@@ -60,5 +92,6 @@ export function buildSessionSummary(sessionId: string, stats: SessionStats): Ses
     skippedCount: stats.skippedCount,
     storageFreedBytes: stats.storageFreedBytes,
     durationMs: durationFrom(stats.startedAt, endedAt),
+    targetCount,
   };
 }

@@ -8,8 +8,11 @@ type ProgressHeaderProps = {
   reviewedCount: number;
   remainingCount: number;
   pendingQueueCount: number;
+  visibleQueueCount: number;
   storageFreedBytes: number;
   targetCount: number | null;
+  sessionLabel: string;
+  sortLabel: string;
   isScanning: boolean;
   scanProgressLoaded: number;
   scanProgressTotal: number | null;
@@ -19,26 +22,39 @@ export function ProgressHeader({
   reviewedCount,
   remainingCount,
   pendingQueueCount,
+  visibleQueueCount,
   storageFreedBytes,
   targetCount,
+  sessionLabel,
+  sortLabel,
   isScanning,
   scanProgressLoaded,
   scanProgressTotal,
 }: ProgressHeaderProps) {
   const progress = targetCount ? reviewedCount / targetCount : 0;
   const scanLabel = scanProgressTotal ? `${scanProgressLoaded}/${scanProgressTotal}` : `${scanProgressLoaded}`;
+  const estimatedPhotoCount = storageFreedBytes > 0 ? Math.max(Math.round(storageFreedBytes / 4_000_000), 1) : 0;
 
   return (
     <View style={styles.card}>
       <ProgressRing progress={progress} reviewedCount={reviewedCount} />
       <View style={styles.metaWrap}>
-        <Text style={styles.eyebrow}>Quick 10</Text>
+        <Text style={styles.eyebrow}>{sessionLabel}</Text>
         <Text style={styles.title}>{remainingCount} left in this pass</Text>
-        <Text style={styles.subtle}>{pendingQueueCount} photos still waiting in queue</Text>
+        <Text style={styles.subtle}>
+          {visibleQueueCount} ready right now / {pendingQueueCount} still waiting overall
+        </Text>
+        {estimatedPhotoCount > 0 ? (
+          <Text style={styles.context}>That is roughly room for {estimatedPhotoCount} more average photos.</Text>
+        ) : null}
         <View style={styles.statRow}>
           <View style={styles.statPill}>
             <Text style={styles.statLabel}>Freed</Text>
             <Text style={styles.statValue}>{formatBytes(storageFreedBytes)}</Text>
+          </View>
+          <View style={styles.statPill}>
+            <Text style={styles.statLabel}>Sort</Text>
+            <Text style={styles.statValue}>{sortLabel}</Text>
           </View>
           <View style={styles.statPill}>
             <Text style={styles.statLabel}>Scanning</Text>
@@ -81,6 +97,11 @@ const styles = StyleSheet.create({
     color: 'rgba(249,250,251,0.78)',
     fontFamily: typography.body,
     fontSize: 14,
+  },
+  context: {
+    color: 'rgba(249,250,251,0.66)',
+    fontFamily: typography.body,
+    fontSize: 13,
   },
   statRow: {
     flexDirection: 'row',
