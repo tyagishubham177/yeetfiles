@@ -9,6 +9,8 @@ export type PermissionState = 'unknown' | 'granted' | 'limited' | 'denied' | 'bl
 export type FileItem = {
   id: string;
   nativeAssetId: string;
+  albumId?: string | null;
+  albumTitle?: string | null;
   uri: string;
   previewUri: string;
   name: string;

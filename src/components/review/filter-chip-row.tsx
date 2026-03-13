@@ -10,7 +10,7 @@ type FilterChipRowProps = {
   onSelect: (filter: FilterType) => void;
 };
 
-const FILTERS: FilterType[] = ['all', 'screenshots', 'camera', 'downloads'];
+const FILTERS: FilterType[] = ['all', 'screenshots', 'camera', 'downloads', 'other'];
 
 export function FilterChipRow({ activeFilter, counts, onSelect }: FilterChipRowProps) {
   return (

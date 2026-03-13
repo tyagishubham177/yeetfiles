@@ -69,12 +69,11 @@ export function useReviewActions() {
           return { ok: false as const, message: result.message, errorCode: result.errorCode };
         }
 
-        commitMoveSuccess(currentFile.id, result.nextUri, result.target, result.finalName);
+        commitMoveSuccess(currentFile.id, result.target);
         triggerInteractionFeedback('move_success', hapticsEnabled);
         return {
           ok: true as const,
           target: result.target,
-          finalName: result.finalName,
         };
       } finally {
         setIsMoving(false);

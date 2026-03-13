@@ -21,7 +21,7 @@ import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
-import { pickMoveTarget } from '../../src/features/file-ops/move-service';
+import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
@@ -82,6 +82,9 @@ export default function QueueScreen() {
   const [secondaryActionsOpen, setSecondaryActionsOpen] = useState(false);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
   const [selectedMoveTarget, setSelectedMoveTarget] = useState<MoveTarget | null>(null);
+  const [availableMoveTargets, setAvailableMoveTargets] = useState<MoveTarget[]>([]);
+  const [pendingAlbumName, setPendingAlbumName] = useState('');
+  const [loadingMoveTargets, setLoadingMoveTargets] = useState(false);
   const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
   const [secondaryFeedback, setSecondaryFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
 
@@ -228,18 +231,16 @@ export default function QueueScreen() {
     setSecondaryActionsOpen(true);
   };
 
-  const chooseMoveFolder = async () => {
+  const loadMoveTargets = async () => {
+    setLoadingMoveTargets(true);
+
     try {
-      const nextTarget = await pickMoveTarget();
-
-      if (!nextTarget) {
-        return;
-      }
-
-      setSelectedMoveTarget(nextTarget);
-      setMoveErrorMessage(null);
+      const targets = await getMoveTargets();
+      setAvailableMoveTargets(targets);
     } catch {
-      setMoveErrorMessage('We could not open the folder picker. Try again.');
+      setMoveErrorMessage('We could not load the media-library albums. Try again.');
+    } finally {
+      setLoadingMoveTargets(false);
     }
   };
 
@@ -264,6 +265,7 @@ export default function QueueScreen() {
     setMoveSheetOpen(false);
     setSecondaryActionsOpen(false);
     setSelectedMoveTarget(result.target);
+    setPendingAlbumName('');
     setSecondaryFeedback({
       tone: 'success',
       message: `Moved to ${result.target.label}`,
@@ -273,7 +275,9 @@ export default function QueueScreen() {
   const openMoveFlow = () => {
     setSecondaryActionsOpen(false);
     setMoveErrorMessage(null);
+    setPendingAlbumName('');
     setMoveSheetOpen(true);
+    void loadMoveTargets();
   };
 
   const handleUndo = () => {
@@ -444,12 +448,16 @@ export default function QueueScreen() {
         visible={moveSheetOpen}
         selectedTarget={selectedMoveTarget}
         recentTargets={recentMoveTargets}
+        availableTargets={availableMoveTargets}
+        pendingAlbumName={pendingAlbumName}
+        isLoadingTargets={loadingMoveTargets}
         isMoving={isMoving}
         errorMessage={moveErrorMessage}
         onClose={() => setMoveSheetOpen(false)}
-        onPickTarget={() => void chooseMoveFolder()}
-        onSelectRecentTarget={(target) => {
+        onPendingAlbumNameChange={setPendingAlbumName}
+        onSelectTarget={(target) => {
           setSelectedMoveTarget(target);
+          setPendingAlbumName(target.isNew ? target.albumName : '');
           setMoveErrorMessage(null);
         }}
         onConfirmMove={() => void confirmMove()}

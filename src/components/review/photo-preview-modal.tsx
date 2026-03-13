@@ -61,44 +61,47 @@ export function PhotoPreviewModal({
           </View>
 
           {file ? (
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <View style={styles.content}>
               <View style={styles.imageCard}>
                 <ZoomablePreviewImage uri={file.previewUri} />
               </View>
 
-              <View style={styles.metaCard}>
-                <View style={styles.metaHeader}>
-                  <Text style={styles.fileName}>{file.name}</Text>
-                  <Text style={styles.bucket}>{file.bucketType}</Text>
+              <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+                <View style={styles.metaCard}>
+                  <View style={styles.metaHeader}>
+                    <Text style={styles.fileName}>{file.name}</Text>
+                    <Text style={styles.bucket}>{file.bucketType}</Text>
+                  </View>
+
+                  <MetaRow label="Album" value={file.albumTitle ?? 'Other'} />
+                  <MetaRow label="Captured" value={formatDateTime(file.createdAt)} />
+                  <MetaRow label="Modified" value={formatDateTime(file.modifiedAt)} />
+                  <MetaRow label="Dimensions" value={formatDimensions(file.width, file.height)} />
+                  <MetaRow label="Size" value={formatBytes(file.sizeBytes)} />
+                  <MetaRow label="Type" value={file.mimeType || 'Unknown'} />
+                  <MetaRow label="Path context" value={formatPathContext(file.uri)} />
                 </View>
 
-                <MetaRow label="Captured" value={formatDateTime(file.createdAt)} />
-                <MetaRow label="Modified" value={formatDateTime(file.modifiedAt)} />
-                <MetaRow label="Dimensions" value={formatDimensions(file.width, file.height)} />
-                <MetaRow label="Size" value={formatBytes(file.sizeBytes)} />
-                <MetaRow label="Type" value={file.mimeType || 'Unknown'} />
-                <MetaRow label="Path context" value={formatPathContext(file.uri)} />
-              </View>
-
-              <View style={styles.actionCard}>
-                <Text style={styles.actionTitle}>Preview actions</Text>
-                <View style={styles.actionGrid}>
-                  <Button label="Keep" onPress={onKeep} compact style={styles.actionButton} />
-                  <Button label="Skip" onPress={onSkip} variant="secondary" compact style={styles.actionButton} />
-                  <Button label="Share" onPress={onShare} variant="secondary" compact style={styles.actionButton} />
-                  <Button
-                    label={isDeleting ? 'Deleting...' : 'Delete'}
-                    onPress={onDelete}
-                    variant="danger"
-                    compact
-                    disabled={isDeleting}
-                    style={styles.actionButton}
-                  />
+                <View style={styles.actionCard}>
+                  <Text style={styles.actionTitle}>Preview actions</Text>
+                  <View style={styles.actionGrid}>
+                    <Button label="Keep" onPress={onKeep} compact style={styles.actionButton} />
+                    <Button label="Skip" onPress={onSkip} variant="secondary" compact style={styles.actionButton} />
+                    <Button label="Share" onPress={onShare} variant="secondary" compact style={styles.actionButton} />
+                    <Button
+                      label={isDeleting ? 'Deleting...' : 'Delete'}
+                      onPress={onDelete}
+                      variant="danger"
+                      compact
+                      disabled={isDeleting}
+                      style={styles.actionButton}
+                    />
+                  </View>
+                  <Text style={styles.actionHint}>The queue will stay in the same place until you take an action.</Text>
+                  <Text style={styles.zoomHint}>Pinch to zoom and drag when zoomed in.</Text>
                 </View>
-                <Text style={styles.actionHint}>The queue will stay in the same place until you take an action.</Text>
-                <Text style={styles.zoomHint}>Pinch to zoom and drag when zoomed in.</Text>
-              </View>
-            </ScrollView>
+              </ScrollView>
+            </View>
           ) : null}
         </SafeAreaView>
       </View>
@@ -147,17 +150,25 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   content: {
+    flex: 1,
     gap: spacing.md,
-    paddingBottom: spacing.xl,
   },
   imageCard: {
-    minHeight: 360,
+    flex: 1,
+    minHeight: 320,
     borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
+  },
+  detailScroll: {
+    flex: 1,
+  },
+  detailContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.xl,
   },
   metaCard: {
     borderRadius: radius.lg,

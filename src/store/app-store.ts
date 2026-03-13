@@ -53,7 +53,7 @@ type AppStore = PersistedAppState & {
   requestRescan: () => void;
   toggleSetting: (key: keyof SettingsState) => void;
   resetOnboarding: () => void;
-  commitMoveSuccess: (fileId: string, nextUri: string, target: MoveTarget, nextName?: string) => void;
+  commitMoveSuccess: (fileId: string, target: MoveTarget) => void;
   recordMoveFailure: (fileId: string, errorCode: string, message: string) => void;
   resetApp: () => Promise<void>;
   dismissSummary: () => void;
@@ -338,12 +338,14 @@ function appendUndoEntry(entries: UndoEntry[], entry: UndoEntry): UndoEntry[] {
 }
 
 function appendRecentMoveTarget(targets: MoveTarget[], target: MoveTarget): MoveTarget[] {
+  const targetKey = target.albumId ?? target.albumName;
+
   return [
     {
       ...target,
       lastUsedAt: nowIso(),
     },
-    ...targets.filter((existing) => existing.uri !== target.uri),
+    ...targets.filter((existing) => (existing.albumId ?? existing.albumName) !== targetKey),
   ].slice(0, 5);
 }
 
@@ -608,7 +610,7 @@ export const useAppStore = create<AppStore>()(
             actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'success', bytesDelta),
           };
         }),
-      commitMoveSuccess: (fileId, nextUri, target, nextName) =>
+      commitMoveSuccess: (fileId, target) =>
         set((state) => {
           const active = state.filesById[fileId];
           if (!active) {
@@ -618,10 +620,8 @@ export const useAppStore = create<AppStore>()(
           const updatedFile: FileItem = {
             ...active,
             status: 'moved',
-            name: nextName ?? active.name,
-            uri: nextUri,
-            previewUri: nextUri,
-            nativeAssetId: '',
+            albumId: target.albumId ?? active.albumId ?? null,
+            albumTitle: target.albumName,
             lastActionAt: nowIso(),
             lastErrorCode: undefined,
           };
@@ -846,7 +846,7 @@ export function selectResumeAvailable(state: AppStore): boolean {
 
 export function getFilterLabel(filter: FilterType): string {
   if (filter === 'all') {
-    return 'All';
+    return 'All images';
   }
 
   if (filter === 'camera') {

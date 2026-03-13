@@ -1,12 +1,8 @@
-import { Directory, File } from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 import { nowIso } from '../../lib/time';
+import type { MoveTarget } from '../../types/app-state';
 import type { FileItem } from '../../types/file-item';
-
-export type MoveTarget = {
-  uri: string;
-  label: string;
-};
 
 export type MoveFileResult =
   | {
@@ -15,8 +11,6 @@ export type MoveFileResult =
       fileId: string;
       timestamp: string;
       target: MoveTarget;
-      nextUri: string;
-      finalName: string;
     }
   | {
       ok: false;
@@ -27,121 +21,98 @@ export type MoveFileResult =
       target: MoveTarget;
     };
 
-function splitFilename(name: string): { baseName: string; extension: string } {
-  const extensionIndex = name.lastIndexOf('.');
+export async function getMoveTargets(): Promise<MoveTarget[]> {
+  const albums = await MediaLibrary.getAlbumsAsync();
 
-  if (extensionIndex <= 0) {
+  return albums
+    .filter((album) => album.assetCount > 0 && album.title !== '0')
+    .sort((left, right) => right.assetCount - left.assetCount || left.title.localeCompare(right.title))
+    .map((album) => ({
+      albumId: album.id,
+      albumName: album.title,
+      label: `${album.title} (${album.assetCount})`,
+      assetCount: album.assetCount,
+    }));
+}
+
+async function resolveTargetAlbum(target: MoveTarget, assetId: string): Promise<MoveTarget> {
+  if (target.albumId) {
+    await MediaLibrary.addAssetsToAlbumAsync([assetId], target.albumId, false);
+    return target;
+  }
+
+  const trimmedName = target.albumName.trim();
+
+  if (!trimmedName) {
+    throw new Error('Choose an album before confirming the move.');
+  }
+
+  const existingAlbum = await MediaLibrary.getAlbumAsync(trimmedName).catch(() => null);
+
+  if (existingAlbum?.id) {
+    await MediaLibrary.addAssetsToAlbumAsync([assetId], existingAlbum.id, false);
     return {
-      baseName: name,
-      extension: '',
+      albumId: existingAlbum.id,
+      albumName: existingAlbum.title,
+      label: existingAlbum.title,
+      assetCount: existingAlbum.assetCount,
     };
   }
 
+  const createdAlbum = await MediaLibrary.createAlbumAsync(trimmedName, assetId, false);
+
   return {
-    baseName: name.slice(0, extensionIndex),
-    extension: name.slice(extensionIndex),
+    albumId: createdAlbum.id,
+    albumName: createdAlbum.title,
+    label: createdAlbum.title,
+    assetCount: createdAlbum.assetCount,
+    isNew: true,
   };
 }
 
-function resolveAvailableDestinationFile(directory: Directory, originalName: string): File {
-  const { baseName, extension } = splitFilename(originalName);
-
-  for (let index = 0; index < 100; index += 1) {
-    const candidateName = index === 0 ? originalName : `${baseName} (${index})${extension}`;
-    const candidate = new File(directory, candidateName);
-
-    if (!candidate.exists) {
-      return candidate;
-    }
-  }
-
-  return new File(directory, `${baseName}-${Date.now()}${extension}`);
-}
-
-function normalizeDirectoryLabel(uri: string): string {
-  const withoutQuery = uri.split('?')[0] ?? uri;
-  const normalized = withoutQuery.replace(/^file:\/\//, '');
-  const segments = normalized.split('/').filter(Boolean);
-
-  if (segments.length === 0) {
-    return 'Selected folder';
-  }
-
-  return segments.slice(-3).join(' / ');
-}
-
-export async function pickMoveTarget(): Promise<MoveTarget | null> {
-  try {
-    const directory = await Directory.pickDirectoryAsync();
-
-    return {
-      uri: directory.uri,
-      label: normalizeDirectoryLabel(directory.uri),
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message.toLowerCase() : '';
-
-    if (message.includes('cancel')) {
-      return null;
-    }
-
-    throw error;
-  }
-}
-
 export async function moveFileItem(file: FileItem, target: MoveTarget): Promise<MoveFileResult> {
-  if (!file.uri) {
+  if (!file.nativeAssetId) {
     return {
       ok: false,
       action: 'move',
       fileId: file.id,
-      errorCode: 'missing_uri',
-      message: 'This photo no longer has a valid file location.',
+      errorCode: 'missing_asset_id',
+      message: 'This photo no longer has a valid media-library id.',
+      target,
+    };
+  }
+
+  if (target.albumId && file.albumId && target.albumId === file.albumId) {
+    return {
+      ok: false,
+      action: 'move',
+      fileId: file.id,
+      errorCode: 'same_album',
+      message: 'This photo is already in that album.',
+      target,
+    };
+  }
+
+  if (!target.albumId && file.albumTitle && target.albumName.trim().toLowerCase() === file.albumTitle.trim().toLowerCase()) {
+    return {
+      ok: false,
+      action: 'move',
+      fileId: file.id,
+      errorCode: 'same_album',
+      message: 'This photo is already in that album.',
       target,
     };
   }
 
   try {
-    const source = new File(file.uri);
-
-    if (!source.exists) {
-      return {
-        ok: false,
-        action: 'move',
-        fileId: file.id,
-        errorCode: 'source_missing',
-        message: 'The source photo is no longer available at its original location.',
-        target,
-      };
-    }
-
-    const destinationDirectory = new Directory(target.uri);
-
-    if (!destinationDirectory.exists) {
-      return {
-        ok: false,
-        action: 'move',
-        fileId: file.id,
-        errorCode: 'destination_missing',
-        message: 'The selected destination folder is no longer available.',
-        target,
-      };
-    }
-
-    const destinationFile = resolveAvailableDestinationFile(destinationDirectory, file.name);
-    source.move(destinationFile);
+    const resolvedTarget = await resolveTargetAlbum(target, file.nativeAssetId);
 
     return {
       ok: true,
       action: 'move',
       fileId: file.id,
       timestamp: nowIso(),
-      target: {
-        uri: target.uri,
-        label: target.label || normalizeDirectoryLabel(target.uri),
-      },
-      nextUri: destinationFile.uri,
-      finalName: destinationFile.name,
+      target: resolvedTarget,
     };
   } catch (error) {
     return {
