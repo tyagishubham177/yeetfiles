@@ -105,17 +105,59 @@ Do not let a clever sort delay Phase 0 exit.
 
 ## Exit gate
 
-Phase 0 is done only when the whole loop works on a real Android phone with believable speed and without trust-breaking behavior.
+Phase 0 is done only when the full `Welcome -> permission -> queue -> summary -> continue/restart` loop works on a real Android phone with believable speed, stable startup, and no trust-breaking behavior.
 
-## Exit checklist
+## Success parameters
+
+### 1. Launch and startup reliability
+
+- the app starts consistently on a real Android phone
+- `npm run dev:tunnel` is not a one-shot gamble; if tunnel is unstable, the fallback path is clear and usable
+- the app reaches the welcome screen and queue flow without route, hydration, or startup crashes
+
+### 2. First-use flow
+
+- tapping `Start cleaning` starts a real scan without requiring hidden manual recovery
+- the first meaningful queue interaction happens quickly on a small real-device library
+- if scanning takes longer, the queue still shows honest progress and an explicit recovery path
+- denied or blocked permission shows a real recovery state, not a fake empty queue
+
+### 3. Core queue loop
+
+- at least one real photo card appears and is reviewable
+- `Keep`, `Delete`, and `Skip` all work through visible UI, not gestures alone
+- reviewed count, remaining count, and storage-freed values stay accurate while reviewing
+- delete only counts as successful after the system confirms the delete
+
+### 4. Session completion
+
+- `Quick 10` stops at exactly 10 reviewed items
+- the summary screen is fully visible on a phone and scrolls when needed
+- the summary offers a clear path to continue cleaning and a clear path to start fresh
+
+### 5. Persistence and trust
+
+- queue state survives restart without duplicates or confusing resets
+- resume only appears when there is a real resumable session
+- starting fresh does not silently reuse a dead queue
+- destructive behavior remains understandable and user-controlled
+
+### 6. UX quality bar
+
+- the UI feels mobile-native rather than like a cramped web view
+- key surfaces respect safe areas and do not cut off important content
+- loading, scanning, error, and completion states are all visible and understandable
+- no blocking crash, render loop, or stuck loading state remains in the primary Phase 0 path
+
+## Signoff checklist
 
 - app runs on a real Android phone, not just an emulator
-- first swipe happens in under 5 seconds from `Start cleaning`
-- no dedicated scan screen appears for small libraries
-- `Keep`, `Delete`, and `Skip` all produce correct state transitions
-- delete confirmation is clear, calm, and accurate
-- storage-freed counter changes only after confirmed successful delete
-- reviewed and remaining counts stay accurate during and after `Quick 10`
-- queue state survives restart without duplicates
-- denied permission shows a recovery path, not a fake empty queue
-- UI feels mobile-native instead of like a web wrapper
+- welcome screen content is fully visible
+- `Start cleaning` leads to a real scanning/review flow
+- at least one real photo card appears without manual debugging steps
+- `Keep`, `Delete`, and `Skip` behave correctly
+- `Quick 10` completes and reaches summary cleanly
+- summary scrolls fully and supports continue plus fresh restart
+- queue state and resume behavior remain trustworthy after restart
+- permission recovery works when access is denied or revoked
+- no crash, stuck scan, or obvious trust break remains in the main loop
