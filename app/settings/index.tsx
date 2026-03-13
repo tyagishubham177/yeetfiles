@@ -1,11 +1,14 @@
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
+import { exportDebugSnapshot } from '../../src/features/diagnostics/export-service';
 import { useAppStore } from '../../src/store/app-store';
+import type { PersistedAppState } from '../../src/types/app-state';
 
 function SettingRow({
   label,
@@ -27,11 +30,59 @@ function SettingRow({
 export default function SettingsScreen() {
   const router = useRouter();
   const settings = useAppStore((state) => state.settings);
+  const filesById = useAppStore((state) => state.filesById);
+  const queueOrder = useAppStore((state) => state.queueOrder);
   const actionLogs = useAppStore((state) => state.actionLogs);
   const analyticsEvents = useAppStore((state) => state.analyticsEvents);
   const toggleSetting = useAppStore((state) => state.toggleSetting);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const resetApp = useAppStore((state) => state.resetApp);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportLocalData = async () => {
+    setIsExporting(true);
+
+    try {
+      const {
+        hasHydrated: _hasHydrated,
+        scanNonce: _scanNonce,
+        setHasHydrated: _setHasHydrated,
+        setPermissionState: _setPermissionState,
+        beginQuickSession: _beginQuickSession,
+        setActiveFilter: _setActiveFilter,
+        setSortMode: _setSortMode,
+        beginScan: _beginScan,
+        receiveScanChunk: _receiveScanChunk,
+        completeScan: _completeScan,
+        failScan: _failScan,
+        keepCurrentFile: _keepCurrentFile,
+        skipCurrentFile: _skipCurrentFile,
+        undoLastAction: _undoLastAction,
+        pruneExpiredUndoEntries: _pruneExpiredUndoEntries,
+        dismissMilestone: _dismissMilestone,
+        commitDeleteSuccess: _commitDeleteSuccess,
+        recordDeleteFailure: _recordDeleteFailure,
+        recordPreviewOpen: _recordPreviewOpen,
+        requestRescan: _requestRescan,
+        toggleSetting: _toggleSetting,
+        resetApp: _resetApp,
+        dismissSummary: _dismissSummary,
+        ...persistedState
+      } = useAppStore.getState();
+
+      const exportFile = exportDebugSnapshot(persistedState as PersistedAppState);
+
+      await Share.share({
+        title: 'FileSwipe debug export',
+        message: 'FileSwipe local debug export',
+        url: exportFile.uri,
+      });
+    } catch {
+      Alert.alert('Export failed', 'We could not create or share the local debug export.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -49,6 +100,10 @@ export default function SettingsScreen() {
           <SettingRow label="Animations" value={settings.animationsEnabled} onValueChange={() => toggleSetting('animationsEnabled')} />
           <SettingRow label="Follow system theme" value={settings.followSystemTheme} onValueChange={() => toggleSetting('followSystemTheme')} />
           <SettingRow label="Gesture hints" value={settings.showGestureHints} onValueChange={() => toggleSetting('showGestureHints')} />
+          <SettingRow label="Debug logging" value={settings.debugLoggingEnabled} onValueChange={() => toggleSetting('debugLoggingEnabled')} />
+          <Text style={styles.sectionHint}>
+            When this is off, detailed local debug logs are cleared and new reproduction logs stop accumulating.
+          </Text>
         </View>
 
         <View style={styles.section}>
@@ -76,8 +131,16 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Diagnostics</Text>
+          <Text style={styles.diagnosticLine}>{Object.keys(filesById).length} files cached in the current local snapshot</Text>
+          <Text style={styles.diagnosticLine}>{queueOrder.length} queue positions tracked locally</Text>
           <Text style={styles.diagnosticLine}>{analyticsEvents.length} analytics events stored locally</Text>
           <Text style={styles.diagnosticLine}>{actionLogs.length} action log entries stored locally</Text>
+          <Button
+            label={isExporting ? 'Preparing export...' : 'Export local debug data'}
+            onPress={() => void exportLocalData()}
+            variant="secondary"
+            disabled={isExporting}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -119,6 +182,12 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontFamily: typography.display,
     fontSize: 24,
+  },
+  sectionHint: {
+    color: colors.mutedInk,
+    fontFamily: typography.body,
+    fontSize: 14,
+    lineHeight: 22,
   },
   settingRow: {
     flexDirection: 'row',

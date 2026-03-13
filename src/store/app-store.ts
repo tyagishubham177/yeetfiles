@@ -227,6 +227,35 @@ function appendAnalyticsEvent(events: AnalyticsEvent[], name: AnalyticsEvent['na
   ].slice(0, 80);
 }
 
+function appendActionLogIfEnabled(
+  state: PersistedAppState,
+  action: ReviewAction,
+  fileId: string,
+  result: ActionLog['result'],
+  bytesDelta: number = 0,
+  errorCode?: string,
+  errorMessage?: string
+): ActionLog[] {
+  if (!state.settings.debugLoggingEnabled) {
+    return state.actionLogs;
+  }
+
+  return appendActionLog(state.actionLogs, action, fileId, state.sessionId, result, bytesDelta, errorCode, errorMessage);
+}
+
+function appendAnalyticsEventIfEnabled(
+  state: PersistedAppState,
+  events: AnalyticsEvent[],
+  name: AnalyticsEvent['name'],
+  sessionId: string
+): AnalyticsEvent[] {
+  if (!state.settings.debugLoggingEnabled) {
+    return events;
+  }
+
+  return appendAnalyticsEvent(events, name, sessionId);
+}
+
 function maybeCaptureSummary(state: PersistedAppState, stats: SessionStats) {
   if (!state.sessionId) {
     return null;
@@ -318,7 +347,7 @@ export const useAppStore = create<AppStore>()(
           const sessionStats = resetProgress ? createEmptySessionStats() : state.sessionStats;
           const analyticsEvents =
             sessionId && (resetProgress || !state.sessionId)
-              ? appendAnalyticsEvent(state.analyticsEvents, 'session_start', sessionId)
+              ? appendAnalyticsEventIfEnabled(state, state.analyticsEvents, 'session_start', sessionId)
               : state.analyticsEvents;
 
           return {
@@ -414,8 +443,10 @@ export const useAppStore = create<AppStore>()(
           const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
           const analyticsEvents = state.sessionId
             ? [
-                ...(state.sessionStats.reviewedCount === 0 ? [appendAnalyticsEvent([], 'first_swipe', state.sessionId)[0]] : []),
-                ...(milestone ? [appendAnalyticsEvent([], 'milestone_hit', state.sessionId)[0]] : []),
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
                 ...state.analyticsEvents,
               ].slice(0, 80)
             : state.analyticsEvents;
@@ -428,7 +459,7 @@ export const useAppStore = create<AppStore>()(
             activeMilestone: milestone ?? state.activeMilestone,
             analyticsEvents,
             undoEntries: appendUndoEntry(state.undoEntries, createUndoEntry('keep', active, state)),
-            actionLogs: appendActionLog(state.actionLogs, 'keep', active.id, state.sessionId, 'success'),
+            actionLogs: appendActionLogIfEnabled(state, 'keep', active.id, 'success'),
           };
         }),
       skipCurrentFile: () =>
@@ -456,8 +487,10 @@ export const useAppStore = create<AppStore>()(
           const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
           const analyticsEvents = state.sessionId
             ? [
-                ...(state.sessionStats.reviewedCount === 0 ? [appendAnalyticsEvent([], 'first_swipe', state.sessionId)[0]] : []),
-                ...(milestone ? [appendAnalyticsEvent([], 'milestone_hit', state.sessionId)[0]] : []),
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
                 ...state.analyticsEvents,
               ].slice(0, 80)
             : state.analyticsEvents;
@@ -471,7 +504,7 @@ export const useAppStore = create<AppStore>()(
             activeMilestone: milestone ?? state.activeMilestone,
             analyticsEvents,
             undoEntries: appendUndoEntry(state.undoEntries, createUndoEntry('skip', active, state)),
-            actionLogs: appendActionLog(state.actionLogs, 'skip', active.id, state.sessionId, 'success'),
+            actionLogs: appendActionLogIfEnabled(state, 'skip', active.id, 'success'),
           };
         }),
       undoLastAction: () =>
@@ -510,7 +543,7 @@ export const useAppStore = create<AppStore>()(
             sessionSummary: undoEntry.previousSessionSummary,
             activeMilestone: undoEntry.previousActiveMilestone,
             undoEntries: state.undoEntries.filter((entry) => entry.id !== undoEntry.id && isUndoEntryActive(entry)),
-            actionLogs: appendActionLog(state.actionLogs, 'undo', undoEntry.fileId, state.sessionId, 'success'),
+            actionLogs: appendActionLogIfEnabled(state, 'undo', undoEntry.fileId, 'success'),
           };
         }),
       pruneExpiredUndoEntries: () =>
@@ -542,8 +575,10 @@ export const useAppStore = create<AppStore>()(
           const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
           const analyticsEvents = state.sessionId
             ? [
-                ...(state.sessionStats.reviewedCount === 0 ? [appendAnalyticsEvent([], 'first_swipe', state.sessionId)[0]] : []),
-                ...(milestone ? [appendAnalyticsEvent([], 'milestone_hit', state.sessionId)[0]] : []),
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
                 ...state.analyticsEvents,
               ].slice(0, 80)
             : state.analyticsEvents;
@@ -555,7 +590,7 @@ export const useAppStore = create<AppStore>()(
             sessionSummary: maybeCaptureSummary(state, sessionStats),
             activeMilestone: milestone ?? state.activeMilestone,
             analyticsEvents,
-            actionLogs: appendActionLog(state.actionLogs, 'delete', fileId, state.sessionId, 'success', bytesDelta),
+            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'success', bytesDelta),
           };
         }),
       recordDeleteFailure: (fileId, errorCode, message) =>
@@ -575,12 +610,12 @@ export const useAppStore = create<AppStore>()(
               ...state.filesById,
               [fileId]: updatedFile,
             },
-            actionLogs: appendActionLog(state.actionLogs, 'delete', fileId, state.sessionId, 'failed', 0, errorCode, message),
+            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'failed', 0, errorCode, message),
           };
         }),
       recordPreviewOpen: (fileId) =>
         set((state) => ({
-          actionLogs: appendActionLog(state.actionLogs, 'open', fileId, state.sessionId, 'success'),
+          actionLogs: appendActionLogIfEnabled(state, 'open', fileId, 'success'),
         })),
       requestRescan: () =>
         set((state) => ({
@@ -600,12 +635,18 @@ export const useAppStore = create<AppStore>()(
           scanNonce: state.scanNonce + 1,
         })),
       toggleSetting: (key) =>
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            [key]: !state.settings[key],
-          },
-        })),
+        set((state) => {
+          const nextValue = !state.settings[key];
+
+          return {
+            settings: {
+              ...state.settings,
+              [key]: nextValue,
+            },
+            actionLogs: key === 'debugLoggingEnabled' && !nextValue ? [] : state.actionLogs,
+            analyticsEvents: key === 'debugLoggingEnabled' && !nextValue ? [] : state.analyticsEvents,
+          };
+        }),
       resetApp: async () => {
         await asyncStorage.removeItem(APP_STORAGE_KEY);
         set({

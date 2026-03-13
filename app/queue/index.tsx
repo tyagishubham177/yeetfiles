@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
@@ -10,6 +10,7 @@ import { EmptyState } from '../../src/components/review/empty-state';
 import { FileCard } from '../../src/components/review/file-card';
 import { FilterChipRow } from '../../src/components/review/filter-chip-row';
 import { MilestoneBanner } from '../../src/components/review/milestone-banner';
+import { PhotoPreviewModal } from '../../src/components/review/photo-preview-modal';
 import { PermissionPanel } from '../../src/components/review/permission-panel';
 import { ProgressHeader } from '../../src/components/review/progress-header';
 import { UndoToast } from '../../src/components/review/undo-toast';
@@ -164,6 +165,37 @@ export default function QueueScreen() {
     setPreviewOpen(true);
   };
 
+  const handlePreviewKeep = () => {
+    setPreviewOpen(false);
+    keepCurrent();
+  };
+
+  const handlePreviewSkip = () => {
+    setPreviewOpen(false);
+    skipCurrent();
+  };
+
+  const handlePreviewDelete = () => {
+    setPreviewOpen(false);
+    setDeleteSheetOpen(true);
+  };
+
+  const shareCurrent = async () => {
+    if (!currentFile) {
+      return;
+    }
+
+    try {
+      await Share.share({
+        title: currentFile.name,
+        message: currentFile.name,
+        url: currentFile.uri,
+      });
+    } catch {
+      Alert.alert('Share unavailable', 'We could not open the native share sheet for this photo.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar style="light" />
@@ -298,38 +330,16 @@ export default function QueueScreen() {
         </View>
       </Sheet>
 
-      <Modal visible={previewOpen} animationType="fade" onRequestClose={() => setPreviewOpen(false)}>
-        <View style={styles.previewWrap}>
-          <SafeAreaView style={styles.previewSafeArea}>
-            <View style={styles.previewHeader}>
-              <Text style={styles.previewTitle}>Preview</Text>
-              <Pressable onPress={() => setPreviewOpen(false)}>
-                <Text style={styles.previewClose}>Close</Text>
-              </Pressable>
-            </View>
-            {currentFile ? (
-              <>
-                <View style={styles.previewCard}>
-                  <FileCard
-                    current={currentFile}
-                    nextItems={[]}
-                    disabled
-                    showHints={false}
-                    onPress={() => undefined}
-                    onKeepGesture={() => undefined}
-                    onDeleteGesture={() => undefined}
-                  />
-                </View>
-                <View style={styles.previewMetaCard}>
-                  <Text style={styles.previewMetaTitle}>{currentFile.name}</Text>
-                  <Text style={styles.previewMetaBody}>{formatCompactDate(currentFile.createdAt)}</Text>
-                  <Text style={styles.previewMetaBody}>{formatBytes(currentFile.sizeBytes)}</Text>
-                </View>
-              </>
-            ) : null}
-          </SafeAreaView>
-        </View>
-      </Modal>
+      <PhotoPreviewModal
+        visible={previewOpen}
+        file={currentFile}
+        isDeleting={isDeleting}
+        onClose={() => setPreviewOpen(false)}
+        onKeep={handlePreviewKeep}
+        onSkip={handlePreviewSkip}
+        onDelete={handlePreviewDelete}
+        onShare={() => void shareCurrent()}
+      />
     </SafeAreaView>
   );
 }
@@ -503,49 +513,5 @@ const styles = StyleSheet.create({
   },
   sheetActions: {
     gap: spacing.sm,
-  },
-  previewWrap: {
-    flex: 1,
-    backgroundColor: colors.stage,
-  },
-  previewSafeArea: {
-    flex: 1,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  previewTitle: {
-    color: colors.white,
-    fontFamily: typography.display,
-    fontSize: 30,
-  },
-  previewClose: {
-    color: 'rgba(249,250,251,0.84)',
-    fontFamily: typography.medium,
-    fontSize: 15,
-  },
-  previewCard: {
-    flex: 1,
-    minHeight: 420,
-  },
-  previewMetaCard: {
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    padding: spacing.md,
-    gap: 4,
-  },
-  previewMetaTitle: {
-    color: colors.white,
-    fontFamily: typography.bold,
-    fontSize: 16,
-  },
-  previewMetaBody: {
-    color: 'rgba(249,250,251,0.82)',
-    fontFamily: typography.body,
-    fontSize: 14,
   },
 });

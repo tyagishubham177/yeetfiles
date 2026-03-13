@@ -9,7 +9,7 @@ This repository is still docs-first, but the direction is now much sharper: get 
 - Repo codename: `YeetFiles`
 - Product working name: `FileSwipe`
 - Branching model: work happens on `codex/` branches into `main`
-- Current delivery target: Phase 1 trust and reward vertical slice
+- Current delivery target: Phase 2 deeper review controls
 - Primary platform: Android only
 
 ## Running On Android
@@ -107,12 +107,12 @@ Start here:
 
 ## Near-term milestone
 
-Phase 1 turns the proven first-swipe loop into something people would plausibly return to:
+Phase 2 starts by making slower review safer without crowding the main queue loop:
 
-- safe undo for reversible review actions
-- stronger progress and reward feedback
-- filter chips and session target choices that persist
-- a more celebratory session summary without weakening delete trust
+- richer full preview with file metadata
+- keep, skip, delete, and share available from preview
+- stronger settings and diagnostics controls
+- local debug export for reproduction on-device
 
 ## Repo rule of thumb
 
