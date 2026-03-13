@@ -1,4 +1,4 @@
-export type ReviewAction = 'keep' | 'delete' | 'skip' | 'open' | 'rescan';
+export type ReviewAction = 'keep' | 'delete' | 'skip' | 'open' | 'rescan' | 'undo';
 export type ActionResult = 'success' | 'failed' | 'cancelled';
 
 export type ActionLog = {
@@ -13,7 +13,7 @@ export type ActionLog = {
   errorMessage?: string;
 };
 
-export type AnalyticsEventName = 'session_start' | 'first_swipe';
+export type AnalyticsEventName = 'session_start' | 'first_swipe' | 'milestone_hit';
 
 export type AnalyticsEvent = {
   id: string;

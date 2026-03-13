@@ -2,49 +2,43 @@
 
 ## Immediate next milestone
 
-Build the Phase 0 first-swipe prototype.
+Build the first coherent Phase 1 trust-and-reward slice.
 
-## Phase 0 scope
+## Current Phase 1 slice
 
-- welcome screen with inline trust note
-- native media permission request
-- photo scan that streams into the queue
-- `Keep`, `Delete`, and `Skip`
-- `Quick 10` mode
-- live reviewed count and storage-freed score
-- local persistence and restart resume
+- safe undo for `Keep` and `Skip`
+- quick-session targets for 10, 25, and 50 items
+- filter chips with persisted selection
+- sort choices that keep queue exploration lightweight
+- milestone feedback and a stronger summary screen
 
 ## Suggested implementation order
 
-1. Set up the Expo and React Native app shell with TypeScript strict mode, Expo Router, and the initial theme tokens.
-2. Build the welcome screen and wire `Start cleaning` straight into the permission request.
-3. Implement a small media scan service that can stream normalized photo records into state.
-4. Create the first `FileItem`, `ActionLog`, and `AppState` shapes plus a Zustand store with AsyncStorage persistence.
-5. Build the queue screen with a single card, stacked depth hint, and button-based `Keep`, `Delete`, and `Skip`.
-6. Add the delete confirmation sheet and live storage-freed updates.
-7. Add `Quick 10`, summary handoff, and resume on restart.
-8. Smoke test on emulator, then validate the full loop on a real Android device.
+1. Validate the safe undo path for `Keep` and `Skip`, including count rollback and clean card reinsertion.
+2. Verify filter chips and sort mode persist after restart without corrupting queue continuity.
+3. Confirm `Quick 10`, `Quick 25`, and `Quick 50` all start and complete with correct progress math.
+4. Tune milestone timing and summary copy on a real Android device so reward stays brief and readable.
+5. Add haptic differentiation only after the visual and trust layer feels stable on device.
 
 ## Success criteria
 
-- works on a real Android phone
-- first swipe feels fast on a small real library
-- UI feels mobile-first and visually alive
-- queue state survives restart
-- the core loop already feels simpler than using the gallery directly
+- undo is reliable for safe actions
+- quick-session target choice does not slow the welcome-to-queue flow
+- filter changes feel helpful rather than disorienting
+- summary feels like a win screen, not a report
+- queue state survives restart with the active filter and target intact
 
 ## Decisions to keep open for now
 
-- exact visual threshold for milestone celebrations
-- exact bucket heuristics for `Screenshots`, `Camera`, and `Downloads`
-- whether safe post-delete restore is possible on the target platform
-- final navigation choice only if Expo Router creates real friction
+- whether delete can ever support a truthful restore path on target Android versions
+- whether `random` sort adds enough value to keep
+- how aggressive milestone copy and motion should be on smaller phones
+- when to add differentiated haptics and optional sound without adding native churn
 
 ## Verification checklist for the next pass
 
-- confirm the app can request and recognize media permission
-- confirm at least one real image can render as the first queue card quickly
-- confirm `Keep`, `Delete`, and `Skip` update counts correctly
-- confirm storage-freed score only changes after successful delete
-- confirm denied permission does not show a fake empty queue
-- confirm closing and reopening the app restores the queue state
+- confirm undo works from both the queue and the summary screen while the window is still active
+- confirm filter counts match the visible pool on a mixed real library
+- confirm changing sort modes does not create duplicates or hide actionable cards
+- confirm `Quick 25` and `Quick 50` still route to summary cleanly
+- confirm closing and reopening the app restores the active filter, sort, and session target

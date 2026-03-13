@@ -3,11 +3,12 @@ import { useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { UndoToast } from '../../src/components/review/undo-toast';
 import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { formatBytes, formatDuration } from '../../src/lib/format';
-import { useAppStore } from '../../src/store/app-store';
+import { getQuickSessionLabel, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
 
 export default function SummaryScreen() {
   const router = useRouter();
@@ -16,6 +17,8 @@ export default function SummaryScreen() {
   const beginQuickSession = useAppStore((state) => state.beginQuickSession);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const dismissSummary = useAppStore((state) => state.dismissSummary);
+  const undoLastAction = useAppStore((state) => state.undoLastAction);
+  const topUndoEntry = useAppStore(selectTopUndoEntry);
 
   useEffect(() => {
     if (!summary) {
@@ -27,11 +30,18 @@ export default function SummaryScreen() {
     return null;
   }
 
+  const paceCopy =
+    summary.reviewedCount >= 25
+      ? 'That was a real cleanup sprint, not just a couple of taps.'
+      : summary.reviewedCount >= 10
+        ? 'You finished a full pass without the loop slowing down.'
+        : 'You kept the session moving and stayed in control.';
+
   const continueCleaning = () => {
     dismissSummary();
 
     if (currentFileId) {
-      beginQuickSession(true);
+      beginQuickSession((summary.targetCount as 10 | 25 | 50 | null) ?? 10, true);
     } else {
       requestRescan();
     }
@@ -49,16 +59,16 @@ export default function SummaryScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.banner}>
-          <Text style={styles.eyebrow}>Quick 10 complete</Text>
+          <Text style={styles.eyebrow}>{getQuickSessionLabel((summary.targetCount as 10 | 25 | 50 | null) ?? 10)} complete</Text>
           <Text style={styles.title}>{summary.reviewedCount} decisions made</Text>
-          <Text style={styles.subtitle}>You kept the loop moving and freed real space without guessing.</Text>
+          <Text style={styles.subtitle}>{paceCopy}</Text>
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatLabel}>Storage recovered</Text>
+            <Text style={styles.heroStatValue}>{formatBytes(summary.storageFreedBytes)}</Text>
+          </View>
         </View>
 
         <View style={styles.grid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Freed</Text>
-            <Text style={styles.statValue}>{formatBytes(summary.storageFreedBytes)}</Text>
-          </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Time</Text>
             <Text style={styles.statValue}>{formatDuration(summary.durationMs)}</Text>
@@ -82,6 +92,17 @@ export default function SummaryScreen() {
           <Button label="Start fresh scan" onPress={restartGame} variant="secondary" />
           <Button label="Back to welcome" onPress={() => router.replace(ROUTES.welcome)} variant="ghost" />
         </View>
+
+        {topUndoEntry ? (
+          <UndoToast
+            entry={topUndoEntry}
+            onUndo={() => {
+              undoLastAction();
+              router.replace(ROUTES.queue);
+            }}
+            tone="light"
+          />
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -121,6 +142,24 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 17,
     lineHeight: 26,
+  },
+  heroStat: {
+    borderRadius: radius.lg,
+    backgroundColor: '#101418',
+    padding: spacing.lg,
+    gap: 6,
+  },
+  heroStatLabel: {
+    color: 'rgba(249,250,251,0.72)',
+    fontFamily: typography.medium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  heroStatValue: {
+    color: colors.white,
+    fontFamily: typography.display,
+    fontSize: 36,
   },
   grid: {
     gap: spacing.sm,
