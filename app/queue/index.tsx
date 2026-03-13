@@ -73,6 +73,26 @@ export default function QueueScreen() {
     return Math.max(targetCount - sessionStats.reviewedCount, 0);
   }, [sessionStats.reviewedCount, targetCount]);
 
+  const scanProgressRatio = useMemo(() => {
+    if (!scanProgressTotal || scanProgressTotal <= 0) {
+      return 0.08;
+    }
+
+    return Math.min(Math.max(scanProgressLoaded / scanProgressTotal, 0.08), 1);
+  }, [scanProgressLoaded, scanProgressTotal]);
+
+  const scanProgressLabel = useMemo(() => {
+    if (scanProgressTotal) {
+      return `${scanProgressLoaded} of ${scanProgressTotal} photos checked`;
+    }
+
+    if (scanProgressLoaded > 0) {
+      return `${scanProgressLoaded} photos checked so far`;
+    }
+
+    return 'Preparing your photo scan';
+  }, [scanProgressLoaded, scanProgressTotal]);
+
   const blocked = permissionState === 'blocked';
   const permissionMissing = permissionState === 'denied' || permissionState === 'blocked';
 
@@ -154,10 +174,22 @@ export default function QueueScreen() {
           </>
         ) : scanState === 'scanning' ? (
           <View style={styles.emptyWrap}>
-            <EmptyState
-              title="Pulling in your first cards"
-              body="The first real photo should appear before the full scan ends. Keep this screen open for a few seconds."
-            />
+            <View style={styles.scanLoadingCard}>
+              <Text style={styles.scanLoadingEyebrow}>Scan in progress</Text>
+              <Text style={styles.scanLoadingTitle}>{scanProgressLabel}</Text>
+              <Text style={styles.scanLoadingBody}>
+                We are building your queue now. As soon as the first photo is ready, it will replace this panel.
+              </Text>
+              <View style={styles.scanProgressTrack}>
+                <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%` }]} />
+              </View>
+              <Text style={styles.scanLoadingHint}>
+                {scanProgressTotal ? `${Math.round(scanProgressRatio * 100)}% complete` : 'This can take longer on larger libraries.'}
+              </Text>
+              <View style={styles.scanLoadingActions}>
+                <Button label="Restart scan" onPress={requestRescan} variant="secondary" />
+              </View>
+            </View>
           </View>
         ) : (
           <View style={styles.emptyWrap}>
@@ -288,6 +320,53 @@ const styles = StyleSheet.create({
   emptyWrap: {
     flex: 1,
     minHeight: 500,
+    justifyContent: 'center',
+  },
+  scanLoadingCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.cardGlass,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  scanLoadingEyebrow: {
+    color: 'rgba(249,250,251,0.7)',
+    fontFamily: typography.medium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  scanLoadingTitle: {
+    color: colors.white,
+    fontFamily: typography.display,
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  scanLoadingBody: {
+    color: 'rgba(249,250,251,0.82)',
+    fontFamily: typography.body,
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  scanProgressTrack: {
+    height: 10,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  scanProgressFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: '#F3B43F',
+  },
+  scanLoadingHint: {
+    color: 'rgba(249,250,251,0.7)',
+    fontFamily: typography.medium,
+    fontSize: 13,
+  },
+  scanLoadingActions: {
+    marginTop: spacing.xs,
   },
   sheetTitle: {
     color: colors.ink,
