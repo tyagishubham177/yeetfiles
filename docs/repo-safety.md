@@ -10,7 +10,6 @@ This repo is set up for a single developer working through pull requests into `m
 - Do not force-push to `main`.
 - Do not delete `main`.
 - Keep docs aligned with implementation in the same branch.
-- In PR notes, call out destructive-flow testing and any change to first-swipe speed or queue clarity.
 
 ## What the PR Safety workflow blocks
 
@@ -18,6 +17,18 @@ This repo is set up for a single developer working through pull requests into `m
 - tracked `.env` files
 - files larger than 5 MB committed directly to the repo
 - broken YAML syntax in GitHub workflow files
+- a missing `package-lock.json` when `package.json` exists
+- dependency install failures in Node-based app branches
+- failed `lint` checks when a `lint` script exists
+- failed `typecheck` checks when a `typecheck` script exists
+- failed test runs when a `test` script exists
+- failed production builds when a `build` script exists
+
+## How Node checks behave
+
+- if the branch does not include `package.json`, the workflow only runs repo hygiene checks
+- if `package.json` exists, the workflow requires `package-lock.json`, runs `npm ci`, and then runs available scripts with `--if-present`
+- this keeps docs-only branches lightweight while making app branches prove they still install and build before merge
 
 ## Rollback tags
 
@@ -31,5 +42,6 @@ This repo is set up for a single developer working through pull requests into `m
 - require a pull request before merging
 - require status checks to pass before merging
 - select `PR Safety` as a required status check
+- require branches to be up to date before merging
 - disable force pushes
 - disable branch deletion
