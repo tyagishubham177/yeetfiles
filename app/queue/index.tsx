@@ -17,15 +17,16 @@ import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../.
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatCompactDate } from '../../src/lib/format';
-import { selectCurrentFile, selectNextStackItems, selectPendingQueueCount, useAppStore } from '../../src/store/app-store';
+import { selectCurrentFile, useAppStore } from '../../src/store/app-store';
 
 export default function QueueScreen() {
   const router = useRouter();
   useScanBootstrap();
 
   const currentFile = useAppStore(selectCurrentFile);
-  const nextItems = useAppStore(selectNextStackItems);
-  const pendingQueueCount = useAppStore(selectPendingQueueCount);
+  const currentFileId = useAppStore((state) => state.currentFileId);
+  const queueOrder = useAppStore((state) => state.queueOrder);
+  const filesById = useAppStore((state) => state.filesById);
   const permissionState = useAppStore((state) => state.permissionState);
   const sessionStats = useAppStore((state) => state.sessionStats);
   const sessionSummary = useAppStore((state) => state.sessionSummary);
@@ -48,6 +49,21 @@ export default function QueueScreen() {
       router.replace(ROUTES.summary);
     }
   }, [router, sessionSummary]);
+
+  const nextItems = useMemo(() => {
+    return queueOrder
+      .filter((fileId) => fileId !== currentFileId)
+      .map((fileId) => filesById[fileId])
+      .filter((file) => Boolean(file) && (file.status === 'pending' || file.status === 'skipped'))
+      .slice(0, 2);
+  }, [currentFileId, filesById, queueOrder]);
+
+  const pendingQueueCount = useMemo(() => {
+    return queueOrder.reduce((count, fileId) => {
+      const file = filesById[fileId];
+      return file && (file.status === 'pending' || file.status === 'skipped') ? count + 1 : count;
+    }, 0);
+  }, [filesById, queueOrder]);
 
   const remainingCount = useMemo(() => {
     if (!targetCount) {
@@ -118,7 +134,7 @@ export default function QueueScreen() {
             <View style={styles.scanRow}>
               <Text style={styles.scanText}>
                 {scanState === 'scanning'
-                  ? `Scanning in background${scanProgressTotal ? ` · ${scanProgressLoaded}/${scanProgressTotal}` : ` · ${scanProgressLoaded}`}`
+                  ? `Scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
                   : 'Queue is live'}
               </Text>
               {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
@@ -159,7 +175,7 @@ export default function QueueScreen() {
           <View style={styles.sheetContext}>
             <Text style={styles.sheetContextTitle}>{currentFile.name}</Text>
             <Text style={styles.sheetContextBody}>
-              {formatCompactDate(currentFile.createdAt)} · {formatBytes(currentFile.sizeBytes)}
+              {formatCompactDate(currentFile.createdAt)} / {formatBytes(currentFile.sizeBytes)}
             </Text>
           </View>
         ) : null}

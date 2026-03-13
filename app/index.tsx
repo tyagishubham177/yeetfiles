@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../src/components/ui/button';
@@ -38,38 +38,40 @@ export default function WelcomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.heroWrap}>
-        <View style={styles.heroOrbA} />
-        <View style={styles.heroOrbB} />
-        <Text style={styles.brand}>FileSwipe</Text>
-        <Text style={styles.title}>Your photo cleanup should feel like momentum, not admin.</Text>
-        <Text style={styles.subtitle}>
-          Start with one card, make one decision, and keep every delete honest.
-        </Text>
-      </View>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.heroWrap}>
+          <View style={styles.heroOrbA} />
+          <View style={styles.heroOrbB} />
+          <Text style={styles.brand}>FileSwipe</Text>
+          <Text style={styles.title}>Your photo cleanup should feel like momentum, not admin.</Text>
+          <Text style={styles.subtitle}>
+            Start with one card, make one decision, and keep every delete honest.
+          </Text>
+        </View>
 
-      <View style={styles.panel}>
-        <Text style={styles.panelTitle}>Phase 0 quick pass</Text>
-        <Text style={styles.panelBody}>Photos only. Local only. Every delete asks first.</Text>
-        {sessionSummary ? (
-          <View style={styles.lastSession}>
-            <Text style={styles.lastSessionTitle}>Last pass</Text>
-            <Text style={styles.lastSessionBody}>
-              {sessionSummary.reviewedCount} reviewed · {formatBytes(sessionSummary.storageFreedBytes)} freed · {formatDuration(sessionSummary.durationMs)}
-            </Text>
-          </View>
-        ) : null}
-        <View style={styles.actionStack}>
-          <Button label={busy ? 'Starting...' : 'Start cleaning'} onPress={() => void goToQueue(true)} disabled={busy} />
-          {resumeAvailable ? (
-            <Button label="Resume session" onPress={() => void goToQueue(false)} variant="secondary" disabled={busy} />
+        <View style={styles.panel}>
+          <Text style={styles.panelTitle}>Phase 0 quick pass</Text>
+          <Text style={styles.panelBody}>Photos only. Local only. Every delete asks first.</Text>
+          {sessionSummary ? (
+            <View style={styles.lastSession}>
+              <Text style={styles.lastSessionTitle}>Last pass</Text>
+              <Text style={styles.lastSessionBody}>
+                {sessionSummary.reviewedCount} reviewed / {formatBytes(sessionSummary.storageFreedBytes)} freed / {formatDuration(sessionSummary.durationMs)}
+              </Text>
+            </View>
           ) : null}
+          <View style={styles.actionStack}>
+            <Button label={busy ? 'Starting...' : 'Start cleaning'} onPress={() => void goToQueue(true)} disabled={busy} />
+            {resumeAvailable ? (
+              <Button label="Resume session" onPress={() => void goToQueue(false)} variant="secondary" disabled={busy} />
+            ) : null}
+          </View>
+          <View style={styles.trustNote}>
+            <Text style={styles.trustTitle}>Trust note</Text>
+            <Text style={styles.trustBody}>No cloud upload. No silent deletes. Queue state comes back after restart.</Text>
+          </View>
         </View>
-        <View style={styles.trustNote}>
-          <Text style={styles.trustTitle}>Trust note</Text>
-          <Text style={styles.trustBody}>No cloud upload. No silent deletes. Queue state comes back after restart.</Text>
-        </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -78,9 +80,13 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,
+  },
+  content: {
+    flexGrow: 1,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     justifyContent: 'space-between',
+    gap: spacing.xl,
   },
   heroWrap: {
     paddingTop: spacing.xxl,
