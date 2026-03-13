@@ -20,19 +20,27 @@ if (!fs.existsSync(target)) {
   process.exit(0);
 }
 
-const source = fs.readFileSync(target, 'utf8');
-const original = 'const TUNNEL_TIMEOUT = 10 * 1000;';
-const replacement = 'const TUNNEL_TIMEOUT = 45 * 1000;';
+let source = fs.readFileSync(target, 'utf8');
+let changed = false;
 
-if (source.includes(replacement)) {
-  console.log('Expo ngrok timeout already patched to 45 seconds.');
+const timeoutOriginal = 'const TUNNEL_TIMEOUT = 10 * 1000;';
+const timeoutReplacement = 'const TUNNEL_TIMEOUT = 45 * 1000;';
+if (source.includes(timeoutOriginal)) {
+  source = source.replace(timeoutOriginal, timeoutReplacement);
+  changed = true;
+}
+
+const guardOriginal = "            if ((0, _NgrokResolver.isNgrokClientError)(error) && error.body.error_code === 103) {";
+const guardReplacement = "            if ((0, _NgrokResolver.isNgrokClientError)(error) && (error == null ? void 0 : error.body) && error.body.error_code === 103) {";
+if (source.includes(guardOriginal)) {
+  source = source.replace(guardOriginal, guardReplacement);
+  changed = true;
+}
+
+if (!changed) {
+  console.log('Expo ngrok patch already applied.');
   process.exit(0);
 }
 
-if (!source.includes(original)) {
-  console.error('Could not find the expected Expo ngrok timeout line to patch.');
-  process.exit(1);
-}
-
-fs.writeFileSync(target, source.replace(original, replacement));
-console.log('Patched Expo ngrok timeout to 45 seconds.');
+fs.writeFileSync(target, source);
+console.log('Patched Expo ngrok timeout and error guard.');
