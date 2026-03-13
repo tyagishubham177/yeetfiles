@@ -7,6 +7,7 @@ Thumbs.db
 expo-env.d.ts
 
 node_modules/
+android/
 dist/
 build/
 
