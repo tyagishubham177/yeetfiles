@@ -12,6 +12,46 @@ This repository is still docs-first, but the direction is now much sharper: get 
 - Current delivery target: Phase 0 first-swipe feasibility slice
 - Primary platform: Android only
 
+## Running On Android
+
+Use a development build, not Expo Go.
+
+Why:
+
+- `expo-media-library` full Android behavior is not reliable in Expo Go for this app flow
+- local `expo run:android` has been unreliable on this Windows setup
+- EAS development builds have been the stable path
+
+First-time install or native update:
+
+```bash
+npx eas login
+npm run dev:android:eas
+```
+
+Install the APK from the EAS link/QR on the phone.
+
+Normal day-to-day run after the dev build is installed:
+
+```bash
+npm run dev:tunnel
+```
+
+Then open the installed `FileSwipe` app on the phone.
+
+If phone and laptop are on the same Wi-Fi, LAN is also available:
+
+```bash
+npm run lan
+```
+
+Notes:
+
+- Use the installed `FileSwipe` dev app, not Expo Go
+- USB is not needed once the dev build is installed
+- Rebuild with `npm run dev:android:eas` only when native dependencies/config change
+- For JS-only changes, just restart the server and reopen/reload the dev app
+
 ## What FileSwipe is trying to solve
 
 Most cleanup apps feel like chores because they ask the user to think like a file manager. FileSwipe should feel closer to a short game loop:

@@ -3,13 +3,14 @@ Thumbs.db
 
 .idea/
 .vscode/
+.expo/
+expo-env.d.ts
 
 node_modules/
+android/
 dist/
 build/
-.expo/
 
 *.log
 .env
 .env.*
-expo-env.d.ts
