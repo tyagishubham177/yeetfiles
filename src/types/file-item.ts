@@ -1,5 +1,5 @@
 export type BucketType = 'screenshots' | 'camera' | 'downloads' | 'other';
-export type FileStatus = 'pending' | 'kept' | 'deleted' | 'skipped' | 'error';
+export type FileStatus = 'pending' | 'kept' | 'deleted' | 'skipped' | 'moved' | 'error';
 export type FilterType = 'all' | BucketType;
 export type SortMode = 'oldest_first' | 'newest_first' | 'largest_first' | 'random';
 export type QuickSessionTarget = 10 | 25 | 50;

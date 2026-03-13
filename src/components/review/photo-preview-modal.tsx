@@ -1,15 +1,18 @@
-import { Modal, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
 import { formatBytes, formatDateTime, formatDimensions, formatPathContext } from '../../lib/format';
 import type { FileItem } from '../../types/file-item';
 import { Button } from '../ui/button';
+import { ZoomablePreviewImage } from './zoomable-preview-image';
 
 type PhotoPreviewModalProps = {
   visible: boolean;
   file: FileItem | null;
   isDeleting: boolean;
+  animationsEnabled: boolean;
+  soundEnabled: boolean;
   onClose: () => void;
   onKeep: () => void;
   onSkip: () => void;
@@ -35,6 +38,8 @@ export function PhotoPreviewModal({
   visible,
   file,
   isDeleting,
+  animationsEnabled,
+  soundEnabled,
   onClose,
   onKeep,
   onSkip,
@@ -42,7 +47,7 @@ export function PhotoPreviewModal({
   onShare,
 }: PhotoPreviewModalProps) {
   return (
-    <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={animationsEnabled ? 'fade' : 'none'} onRequestClose={onClose}>
       <View style={styles.wrap}>
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
@@ -50,7 +55,7 @@ export function PhotoPreviewModal({
               <Text style={styles.eyebrow}>Full preview</Text>
               <Text style={styles.title}>Inspect before you decide</Text>
             </View>
-            <Pressable onPress={onClose}>
+            <Pressable android_disableSound={!soundEnabled} onPress={onClose}>
               <Text style={styles.closeLink}>Close</Text>
             </Pressable>
           </View>
@@ -58,7 +63,7 @@ export function PhotoPreviewModal({
           {file ? (
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
               <View style={styles.imageCard}>
-                <Image source={{ uri: file.previewUri }} style={styles.image} resizeMode="contain" />
+                <ZoomablePreviewImage uri={file.previewUri} />
               </View>
 
               <View style={styles.metaCard}>
@@ -91,6 +96,7 @@ export function PhotoPreviewModal({
                   />
                 </View>
                 <Text style={styles.actionHint}>The queue will stay in the same place until you take an action.</Text>
+                <Text style={styles.zoomHint}>Pinch to zoom and drag when zoomed in.</Text>
               </View>
             </ScrollView>
           ) : null}
@@ -152,10 +158,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
-  },
-  image: {
-    width: '100%',
-    height: 420,
   },
   metaCard: {
     borderRadius: radius.lg,
@@ -227,5 +229,12 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 14,
     lineHeight: 22,
+  },
+  zoomHint: {
+    color: 'rgba(249,250,251,0.6)',
+    fontFamily: typography.medium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
   },
 });

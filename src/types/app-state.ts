@@ -6,6 +6,7 @@ export type SessionStats = {
   keptCount: number;
   deletedCount: number;
   skippedCount: number;
+  movedCount: number;
   storageFreedBytes: number;
   startedAt: string | null;
   lastUpdatedAt: string | null;
@@ -17,9 +18,16 @@ export type SessionSummary = {
   keptCount: number;
   deletedCount: number;
   skippedCount: number;
+  movedCount: number;
   storageFreedBytes: number;
   durationMs: number;
   targetCount: QuickSessionTarget | null;
+};
+
+export type MoveTarget = {
+  uri: string;
+  label: string;
+  lastUsedAt?: string;
 };
 
 export type UndoableAction = 'keep' | 'skip';
@@ -48,6 +56,7 @@ export type MilestoneEvent = {
 
 export type SettingsState = {
   hapticsEnabled: boolean;
+  soundEnabled: boolean;
   animationsEnabled: boolean;
   followSystemTheme: boolean;
   showGestureHints: boolean;
@@ -78,5 +87,6 @@ export type PersistedAppState = {
   sessionSummary: SessionSummary | null;
   undoEntries: UndoEntry[];
   activeMilestone: MilestoneEvent | null;
+  recentMoveTargets: MoveTarget[];
   settings: SettingsState;
 };

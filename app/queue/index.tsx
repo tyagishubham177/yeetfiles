@@ -10,14 +10,18 @@ import { EmptyState } from '../../src/components/review/empty-state';
 import { FileCard } from '../../src/components/review/file-card';
 import { FilterChipRow } from '../../src/components/review/filter-chip-row';
 import { MilestoneBanner } from '../../src/components/review/milestone-banner';
+import { MoveDestinationSheet } from '../../src/components/review/move-destination-sheet';
 import { PhotoPreviewModal } from '../../src/components/review/photo-preview-modal';
 import { PermissionPanel } from '../../src/components/review/permission-panel';
 import { ProgressHeader } from '../../src/components/review/progress-header';
+import { SecondaryActionsSheet } from '../../src/components/review/secondary-actions-sheet';
 import { UndoToast } from '../../src/components/review/undo-toast';
 import { Button } from '../../src/components/ui/button';
 import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
+import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
+import { pickMoveTarget } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
@@ -34,6 +38,7 @@ import {
   selectVisibleQueueCount,
   useAppStore,
 } from '../../src/store/app-store';
+import type { MoveTarget } from '../../src/types/app-state';
 import type { FilterType, SortMode } from '../../src/types/file-item';
 
 const SORT_OPTIONS: SortMode[] = ['oldest_first', 'newest_first', 'largest_first', 'random'];
@@ -68,11 +73,17 @@ export default function QueueScreen() {
   const dismissMilestone = useAppStore((state) => state.dismissMilestone);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const recordPreviewOpen = useAppStore((state) => state.recordPreviewOpen);
+  const recentMoveTargets = useAppStore((state) => state.recentMoveTargets);
   const settings = useAppStore((state) => state.settings);
-  const { keepCurrent, skipCurrent, deleteCurrent, isDeleting } = useReviewActions();
+  const { keepCurrent, skipCurrent, deleteCurrent, moveCurrent, isDeleting, isMoving } = useReviewActions();
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
+  const [secondaryActionsOpen, setSecondaryActionsOpen] = useState(false);
+  const [moveSheetOpen, setMoveSheetOpen] = useState(false);
+  const [selectedMoveTarget, setSelectedMoveTarget] = useState<MoveTarget | null>(null);
+  const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
+  const [secondaryFeedback, setSecondaryFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     if (sessionSummary) {
@@ -138,6 +149,18 @@ export default function QueueScreen() {
     return () => clearTimeout(timeoutId);
   }, [activeMilestone, dismissMilestone]);
 
+  useEffect(() => {
+    if (!secondaryFeedback) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setSecondaryFeedback(null);
+    }, 3200);
+
+    return () => clearTimeout(timeoutId);
+  }, [secondaryFeedback]);
+
   const retryPermission = async () => {
     const nextPermissionState = await requestMediaPermissionState();
     setPermissionState(nextPermissionState);
@@ -162,6 +185,7 @@ export default function QueueScreen() {
     }
 
     recordPreviewOpen(currentFile.id);
+    triggerInteractionFeedback('preview_open', settings.hapticsEnabled);
     setPreviewOpen(true);
   };
 
@@ -196,6 +220,69 @@ export default function QueueScreen() {
     }
   };
 
+  const openSecondaryActions = () => {
+    if (!currentFile || isDeleting || isMoving) {
+      return;
+    }
+
+    setSecondaryActionsOpen(true);
+  };
+
+  const chooseMoveFolder = async () => {
+    try {
+      const nextTarget = await pickMoveTarget();
+
+      if (!nextTarget) {
+        return;
+      }
+
+      setSelectedMoveTarget(nextTarget);
+      setMoveErrorMessage(null);
+    } catch {
+      setMoveErrorMessage('We could not open the folder picker. Try again.');
+    }
+  };
+
+  const confirmMove = async () => {
+    if (!selectedMoveTarget) {
+      setMoveErrorMessage('Choose a destination folder before confirming the move.');
+      return;
+    }
+
+    const result = await moveCurrent(selectedMoveTarget);
+
+    if (!result.ok) {
+      setMoveErrorMessage(result.message);
+      setSecondaryFeedback({
+        tone: 'error',
+        message: `Move failed: ${result.message}`,
+      });
+      return;
+    }
+
+    setMoveErrorMessage(null);
+    setMoveSheetOpen(false);
+    setSecondaryActionsOpen(false);
+    setSelectedMoveTarget(result.target);
+    setSecondaryFeedback({
+      tone: 'success',
+      message: `Moved to ${result.target.label}`,
+    });
+  };
+
+  const openMoveFlow = () => {
+    setSecondaryActionsOpen(false);
+    setMoveErrorMessage(null);
+    setMoveSheetOpen(true);
+  };
+
+  const handleUndo = () => {
+    undoLastAction();
+    triggerInteractionFeedback('undo', settings.hapticsEnabled);
+  };
+
+  const busy = isDeleting || isMoving;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar style="light" />
@@ -204,7 +291,7 @@ export default function QueueScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
           <Text style={styles.queueTitle}>Queue</Text>
-          <Pressable onPress={() => router.push(ROUTES.settings)}>
+          <Pressable android_disableSound={!settings.soundEnabled} onPress={() => router.push(ROUTES.settings)}>
             <Text style={styles.settingsLink}>Settings</Text>
           </Pressable>
         </View>
@@ -229,7 +316,13 @@ export default function QueueScreen() {
             const selected = option === sortMode;
 
             return (
-              <Pressable key={option} accessibilityRole="button" onPress={() => setSortMode(option)} style={[styles.sortChip, selected && styles.sortChipSelected]}>
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                android_disableSound={!settings.soundEnabled}
+                onPress={() => setSortMode(option)}
+                style={[styles.sortChip, selected && styles.sortChipSelected]}
+              >
                 <Text style={[styles.sortChipLabel, selected && styles.sortChipLabelSelected]}>{getSortLabel(option)}</Text>
               </Pressable>
             );
@@ -250,24 +343,30 @@ export default function QueueScreen() {
               </Text>
               {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
             </View>
+            {secondaryFeedback ? (
+              <View style={[styles.secondaryFeedbackCard, secondaryFeedback.tone === 'error' && styles.secondaryFeedbackCardError]}>
+                <Text style={styles.secondaryFeedbackText}>{secondaryFeedback.message}</Text>
+              </View>
+            ) : null}
             <View style={styles.cardWrap}>
               <FileCard
                 current={currentFile}
                 nextItems={nextItems}
-                disabled={isDeleting}
+                disabled={busy}
                 showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
                 onPress={openPreview}
                 onKeepGesture={keepCurrent}
                 onDeleteGesture={() => setDeleteSheetOpen(true)}
+                onOpenSecondaryActions={openSecondaryActions}
               />
             </View>
             <ActionDock
               onDelete={() => setDeleteSheetOpen(true)}
               onKeep={keepCurrent}
               onSkip={skipCurrent}
-              onUndo={topUndoEntry ? undoLastAction : undefined}
+              onUndo={topUndoEntry ? handleUndo : undefined}
               undoCount={undoEntries.length}
-              disabled={isDeleting}
+              disabled={busy}
             />
           </>
         ) : filterEmpty ? (
@@ -307,7 +406,7 @@ export default function QueueScreen() {
 
       {topUndoEntry ? (
         <View style={styles.undoToastWrap}>
-          <UndoToast entry={topUndoEntry} onUndo={undoLastAction} />
+          <UndoToast entry={topUndoEntry} onUndo={handleUndo} />
         </View>
       ) : null}
 
@@ -326,14 +425,42 @@ export default function QueueScreen() {
         ) : null}
         <View style={styles.sheetActions}>
           <Button label="Cancel" onPress={() => setDeleteSheetOpen(false)} variant="secondary" />
-          <Button label={isDeleting ? 'Deleting...' : 'Delete permanently'} onPress={() => void confirmDelete()} variant="danger" disabled={isDeleting} />
+          <Button label={isDeleting ? 'Deleting...' : 'Delete permanently'} onPress={() => void confirmDelete()} variant="danger" disabled={busy} />
         </View>
       </Sheet>
+
+      <SecondaryActionsSheet
+        visible={secondaryActionsOpen}
+        fileName={currentFile?.name}
+        onClose={() => setSecondaryActionsOpen(false)}
+        onMove={openMoveFlow}
+        onShare={() => {
+          setSecondaryActionsOpen(false);
+          void shareCurrent();
+        }}
+      />
+
+      <MoveDestinationSheet
+        visible={moveSheetOpen}
+        selectedTarget={selectedMoveTarget}
+        recentTargets={recentMoveTargets}
+        isMoving={isMoving}
+        errorMessage={moveErrorMessage}
+        onClose={() => setMoveSheetOpen(false)}
+        onPickTarget={() => void chooseMoveFolder()}
+        onSelectRecentTarget={(target) => {
+          setSelectedMoveTarget(target);
+          setMoveErrorMessage(null);
+        }}
+        onConfirmMove={() => void confirmMove()}
+      />
 
       <PhotoPreviewModal
         visible={previewOpen}
         file={currentFile}
         isDeleting={isDeleting}
+        animationsEnabled={settings.animationsEnabled}
+        soundEnabled={settings.soundEnabled}
         onClose={() => setPreviewOpen(false)}
         onKeep={handlePreviewKeep}
         onSkip={handlePreviewSkip}
@@ -403,6 +530,24 @@ const styles = StyleSheet.create({
     color: '#FFC2B4',
     fontFamily: typography.medium,
     fontSize: 13,
+  },
+  secondaryFeedbackCard: {
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(46,194,126,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(46,194,126,0.3)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  secondaryFeedbackCardError: {
+    backgroundColor: 'rgba(231,111,81,0.16)',
+    borderColor: 'rgba(231,111,81,0.3)',
+  },
+  secondaryFeedbackText: {
+    color: colors.white,
+    fontFamily: typography.medium,
+    fontSize: 14,
+    lineHeight: 21,
   },
   cardWrap: {
     flex: 1,

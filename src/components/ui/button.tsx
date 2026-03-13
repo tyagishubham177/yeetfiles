@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
 
 import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
+import { useAppStore } from '../../store/app-store';
 
 type ButtonProps = {
   label: string;
@@ -19,9 +20,13 @@ export function Button({
   compact = false,
   style,
 }: ButtonProps) {
+  const soundEnabled = useAppStore((state) => state.settings.soundEnabled);
+  const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
+
   return (
     <Pressable
       accessibilityRole="button"
+      android_disableSound={!soundEnabled}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -31,7 +36,7 @@ export function Button({
         variant === 'secondary' && styles.secondary,
         variant === 'danger' && styles.danger,
         variant === 'ghost' && styles.ghost,
-        pressed && !disabled && styles.pressed,
+        pressed && !disabled && animationsEnabled && styles.pressed,
         disabled && styles.disabled,
         style,
       ]}

@@ -11,7 +11,7 @@ import { nowIso } from '../lib/time';
 import { asyncStorage } from '../persistence/async-storage';
 import { APP_STORAGE_KEY } from '../persistence/storage-adapter';
 import type { ActionLog, AnalyticsEvent, ReviewAction } from '../types/action-log';
-import type { MilestoneEvent, PersistedAppState, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
+import type { MilestoneEvent, MoveTarget, PersistedAppState, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
 import type {
   BucketType,
   FileItem,
@@ -52,12 +52,16 @@ type AppStore = PersistedAppState & {
   recordPreviewOpen: (fileId: string) => void;
   requestRescan: () => void;
   toggleSetting: (key: keyof SettingsState) => void;
+  resetOnboarding: () => void;
+  commitMoveSuccess: (fileId: string, nextUri: string, target: MoveTarget, nextName?: string) => void;
+  recordMoveFailure: (fileId: string, errorCode: string, message: string) => void;
   resetApp: () => Promise<void>;
   dismissSummary: () => void;
 };
 
 const INITIAL_SETTINGS: SettingsState = {
   hapticsEnabled: true,
+  soundEnabled: false,
   animationsEnabled: true,
   followSystemTheme: true,
   showGestureHints: true,
@@ -86,6 +90,7 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
   sessionSummary: null,
   undoEntries: [],
   activeMilestone: null,
+  recentMoveTargets: [],
   settings: INITIAL_SETTINGS,
 };
 
@@ -330,6 +335,16 @@ function pruneExpiredUndoEntries(entries: UndoEntry[]): UndoEntry[] {
 
 function appendUndoEntry(entries: UndoEntry[], entry: UndoEntry): UndoEntry[] {
   return [entry, ...pruneExpiredUndoEntries(entries)].slice(0, UNDO_BUFFER_LIMIT);
+}
+
+function appendRecentMoveTarget(targets: MoveTarget[], target: MoveTarget): MoveTarget[] {
+  return [
+    {
+      ...target,
+      lastUsedAt: nowIso(),
+    },
+    ...targets.filter((existing) => existing.uri !== target.uri),
+  ].slice(0, 5);
 }
 
 export const useAppStore = create<AppStore>()(
@@ -593,6 +608,70 @@ export const useAppStore = create<AppStore>()(
             actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'success', bytesDelta),
           };
         }),
+      commitMoveSuccess: (fileId, nextUri, target, nextName) =>
+        set((state) => {
+          const active = state.filesById[fileId];
+          if (!active) {
+            return {};
+          }
+
+          const updatedFile: FileItem = {
+            ...active,
+            status: 'moved',
+            name: nextName ?? active.name,
+            uri: nextUri,
+            previewUri: nextUri,
+            nativeAssetId: '',
+            lastActionAt: nowIso(),
+            lastErrorCode: undefined,
+          };
+          const nextFiles: Record<string, FileItem> = {
+            ...state.filesById,
+            [fileId]: updatedFile,
+          };
+          const sessionStats = applySuccessfulAction(state.sessionStats, 'move');
+          const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
+          const analyticsEvents = state.sessionId
+            ? [
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
+                ...state.analyticsEvents,
+              ].slice(0, 80)
+            : state.analyticsEvents;
+
+          return {
+            filesById: nextFiles,
+            currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
+            sessionStats,
+            sessionSummary: maybeCaptureSummary(state, sessionStats),
+            activeMilestone: milestone ?? state.activeMilestone,
+            analyticsEvents,
+            recentMoveTargets: appendRecentMoveTarget(state.recentMoveTargets, target),
+            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'success'),
+          };
+        }),
+      recordMoveFailure: (fileId, errorCode, message) =>
+        set((state) => {
+          const active = state.filesById[fileId];
+          if (!active) {
+            return {};
+          }
+
+          const updatedFile: FileItem = {
+            ...active,
+            lastErrorCode: errorCode,
+          };
+
+          return {
+            filesById: {
+              ...state.filesById,
+              [fileId]: updatedFile,
+            },
+            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'failed', 0, errorCode, message),
+          };
+        }),
       recordDeleteFailure: (fileId, errorCode, message) =>
         set((state) => {
           const active = state.filesById[fileId];
@@ -647,6 +726,13 @@ export const useAppStore = create<AppStore>()(
             analyticsEvents: key === 'debugLoggingEnabled' && !nextValue ? [] : state.analyticsEvents,
           };
         }),
+      resetOnboarding: () =>
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            hasCompletedOnboarding: false,
+          },
+        })),
       resetApp: async () => {
         await asyncStorage.removeItem(APP_STORAGE_KEY);
         set({
@@ -663,6 +749,19 @@ export const useAppStore = create<AppStore>()(
     {
       name: APP_STORAGE_KEY,
       storage: createJSONStorage(() => asyncStorage),
+      merge: (persistedState, currentState) => {
+        const typedPersisted = persistedState as Partial<PersistedAppState> | undefined;
+
+        return {
+          ...currentState,
+          ...typedPersisted,
+          recentMoveTargets: typedPersisted?.recentMoveTargets ?? currentState.recentMoveTargets,
+          settings: {
+            ...INITIAL_SETTINGS,
+            ...(typedPersisted?.settings ?? {}),
+          },
+        };
+      },
       partialize: (state) => ({
         permissionState: state.permissionState,
         sessionMode: state.sessionMode,
@@ -682,6 +781,7 @@ export const useAppStore = create<AppStore>()(
         sessionId: state.sessionId,
         sessionStats: state.sessionStats,
         sessionSummary: state.sessionSummary,
+        recentMoveTargets: state.recentMoveTargets,
         settings: state.settings,
       }),
       onRehydrateStorage: () => (state) => {

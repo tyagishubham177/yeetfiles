@@ -9,7 +9,7 @@ This repository is still docs-first, but the direction is now much sharper: get 
 - Repo codename: `YeetFiles`
 - Product working name: `FileSwipe`
 - Branching model: work happens on `codex/` branches into `main`
-- Current delivery target: Phase 2 deeper review controls
+- Current delivery target: Phase 3 scaling and re-scan
 - Primary platform: Android only
 
 ## Running On Android
@@ -107,12 +107,12 @@ Start here:
 
 ## Near-term milestone
 
-Phase 2 starts by making slower review safer without crowding the main queue loop:
+Phase 3 should now focus on reliability across medium and large libraries:
 
-- richer full preview with file metadata
-- keep, skip, delete, and share available from preview
-- stronger settings and diagnostics controls
-- local debug export for reproduction on-device
+- re-scan photos without reintroducing already reviewed items
+- highlight newly added files since the last snapshot
+- keep queue performance steady on larger libraries
+- make interruption and resume behavior more resilient
 
 ## Repo rule of thumb
 
