@@ -13,7 +13,9 @@ import { selectResumeAvailable, useAppStore } from '../src/store/app-store';
 export default function WelcomeScreen() {
   const router = useRouter();
   const resumeAvailable = useAppStore(selectResumeAvailable);
+  const currentFileId = useAppStore((state) => state.currentFileId);
   const beginQuickSession = useAppStore((state) => state.beginQuickSession);
+  const requestRescan = useAppStore((state) => state.requestRescan);
   const setPermissionState = useAppStore((state) => state.setPermissionState);
   const sessionSummary = useAppStore((state) => state.sessionSummary);
   const [busy, setBusy] = useState(false);
@@ -22,7 +24,12 @@ export default function WelcomeScreen() {
     setBusy(true);
 
     try {
-      beginQuickSession(resetProgress);
+      if (resetProgress && !currentFileId) {
+        requestRescan();
+      } else {
+        beginQuickSession(resetProgress);
+      }
+
       const permissionState = await requestMediaPermissionState();
       setPermissionState(permissionState);
 
