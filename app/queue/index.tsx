@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useShallow } from 'zustand/react/shallow';
 
 import { ActionDock } from '../../src/components/review/action-dock';
 import { EmptyState } from '../../src/components/review/empty-state';
@@ -41,7 +42,7 @@ export default function QueueScreen() {
   useScanBootstrap();
 
   const currentFile = useAppStore(selectCurrentFile);
-  const nextItems = useAppStore(selectNextStackItems);
+  const nextItems = useAppStore(useShallow(selectNextStackItems));
   const permissionState = useAppStore((state) => state.permissionState);
   const sessionStats = useAppStore((state) => state.sessionStats);
   const sessionSummary = useAppStore((state) => state.sessionSummary);
@@ -55,7 +56,7 @@ export default function QueueScreen() {
   const activeMilestone = useAppStore((state) => state.activeMilestone);
   const pendingQueueCount = useAppStore(selectPendingQueueCount);
   const visibleQueueCount = useAppStore(selectVisibleQueueCount);
-  const filterCounts = useAppStore(selectFilterCounts);
+  const filterCounts = useAppStore(useShallow(selectFilterCounts));
   const topUndoEntry = useAppStore(selectTopUndoEntry);
   const undoEntries = useAppStore((state) => state.undoEntries);
   const setPermissionState = useAppStore((state) => state.setPermissionState);
