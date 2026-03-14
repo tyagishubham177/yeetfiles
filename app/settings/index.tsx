@@ -1,8 +1,10 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { StatusBar } from 'expo-status-bar';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { StatusBanner } from '../../src/components/feedback/status-banner';
 import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
@@ -17,17 +19,19 @@ function SettingRow({
   label,
   value,
   onValueChange,
+  disabled = false,
 }: {
   label: string;
   value: boolean;
   onValueChange: () => void;
+  disabled?: boolean;
 }) {
   const { colors } = useAppTheme();
 
   return (
-    <View style={styles.settingRow}>
+    <View style={[styles.settingRow, disabled && styles.settingRowDisabled]}>
       <Text style={[styles.settingLabel, { color: colors.ink }]}>{label}</Text>
-      <Switch value={value} onValueChange={onValueChange} trackColor={{ true: colors.progress }} />
+      <Switch disabled={disabled} value={value} onValueChange={onValueChange} trackColor={{ true: colors.progress }} />
     </View>
   );
 }
@@ -51,15 +55,16 @@ function NightModePicker({
             key={option}
             accessibilityRole="button"
             onPress={() => onChange(option)}
-            style={[
+            style={({ pressed }) => [
               styles.modeChip,
               {
-                backgroundColor: selected ? colors.ink : colors.surfaceMuted,
-                borderColor: selected ? colors.ink : isDark ? colors.outline : 'transparent',
+                backgroundColor: selected ? colors.action : colors.surfaceMuted,
+                borderColor: selected ? colors.action : isDark ? colors.outline : 'transparent',
               },
+              pressed && styles.pressedChip,
             ]}
           >
-            <Text style={[styles.modeChipLabel, { color: selected ? colors.white : colors.ink }]}>{option === 'off' ? 'Off' : option === 'auto' ? 'Auto' : 'On'}</Text>
+            <Text style={[styles.modeChipLabel, { color: selected ? colors.onAction : colors.ink }]}>{option === 'off' ? 'Off' : option === 'auto' ? 'Auto' : 'On'}</Text>
           </Pressable>
         );
       })}
@@ -91,9 +96,27 @@ export default function SettingsScreen() {
   const resetOnboarding = useAppStore((state) => state.resetOnboarding);
   const resetApp = useAppStore((state) => state.resetApp);
   const [isExporting, setIsExporting] = useState(false);
+  const [busyNotificationKey, setBusyNotificationKey] = useState<'weeklySummaryNotificationsEnabled' | 'storageAlertsEnabled' | null>(null);
+  const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!statusFeedback) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setStatusFeedback(null);
+    }, 3600);
+
+    return () => clearTimeout(timeoutId);
+  }, [statusFeedback]);
 
   const exportLocalData = async () => {
     setIsExporting(true);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Packaging the current device snapshot for sharing...',
+    });
 
     try {
       const {
@@ -138,7 +161,15 @@ export default function SettingsScreen() {
         message: 'FileSwipe local debug export',
         url: exportFile.uri,
       });
+      setStatusFeedback({
+        tone: 'success',
+        message: 'Debug export prepared. The native share sheet should be open now.',
+      });
     } catch {
+      setStatusFeedback({
+        tone: 'error',
+        message: 'We could not create or share the local debug export.',
+      });
       Alert.alert('Export failed', 'We could not create or share the local debug export.');
     } finally {
       setIsExporting(false);
@@ -148,34 +179,59 @@ export default function SettingsScreen() {
   const toggleNotificationSetting = async (key: 'weeklySummaryNotificationsEnabled' | 'storageAlertsEnabled') => {
     if (settings[key]) {
       toggleSetting(key);
+      setStatusFeedback({
+        tone: 'success',
+        message: key === 'weeklySummaryNotificationsEnabled' ? 'Weekly reminder turned off.' : 'Low-storage alerts turned off.',
+      });
       return;
     }
+
+    setBusyNotificationKey(key);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Checking Android notification permission...',
+    });
 
     const permissionState = await requestNotificationPermissionStateAsync().catch(() => 'blocked' as const);
     setNotificationPermissionState(permissionState);
 
     if (permissionState !== 'granted') {
+      setStatusFeedback({
+        tone: 'error',
+        message:
+          permissionState === 'blocked'
+            ? 'Notifications are blocked in system settings right now.'
+            : 'Notification permission was not granted yet.',
+      });
       Alert.alert(
         'Notifications are still off',
         permissionState === 'blocked'
           ? 'FileSwipe cannot schedule reminders until notifications are allowed in system settings.'
           : 'FileSwipe only turns reminders on after Android notification permission is granted.'
       );
+      setBusyNotificationKey(null);
       return;
     }
 
     toggleSetting(key);
+    setStatusFeedback({
+      tone: 'success',
+      message: key === 'weeklySummaryNotificationsEnabled' ? 'Weekly reminder turned on.' : 'Low-storage alerts turned on.',
+    });
+    setBusyNotificationKey(null);
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right']}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: colors.ink }]}>Settings</Text>
-          <Pressable android_disableSound={!settings.soundEnabled} onPress={() => router.back()}>
+          <Pressable android_disableSound={!settings.soundEnabled} onPress={() => router.back()} style={({ pressed }) => pressed && styles.linkPressed}>
             <Text style={[styles.backLink, { color: colors.progress }]}>Back</Text>
           </Pressable>
         </View>
+        {statusFeedback ? <StatusBanner message={statusFeedback.message} tone={statusFeedback.tone} /> : null}
 
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Preferences</Text>
@@ -205,11 +261,13 @@ export default function SettingsScreen() {
             label="Weekly summary reminder"
             value={settings.weeklySummaryNotificationsEnabled}
             onValueChange={() => void toggleNotificationSetting('weeklySummaryNotificationsEnabled')}
+            disabled={busyNotificationKey !== null}
           />
           <SettingRow
             label="Low-storage alerts"
             value={settings.storageAlertsEnabled}
             onValueChange={() => void toggleNotificationSetting('storageAlertsEnabled')}
+            disabled={busyNotificationKey !== null}
           />
           <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>Permission status: {notificationPermissionState}</Text>
           <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
@@ -220,12 +278,17 @@ export default function SettingsScreen() {
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Session and data</Text>
           <Button
-            label={scanState === 'scanning' && scanMode === 'rescan' ? 'Re-scanning photos...' : 'Re-scan photos'}
+            label="Re-scan photos"
+            loading={scanState === 'scanning' && scanMode === 'rescan'}
+            loadingLabel="Re-scanning photos..."
             onPress={() => {
+              setStatusFeedback({
+                tone: 'info',
+                message: 'Fresh queue requested. FileSwipe will scan in the background.',
+              });
               requestRescan();
               router.replace(ROUTES.queue);
             }}
-            disabled={scanState === 'scanning' && scanMode === 'rescan'}
           />
           <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
             Re-scan checks the library again, adds only unmatched photos, and keeps already reviewed items from re-entering as duplicates.
@@ -248,13 +311,14 @@ export default function SettingsScreen() {
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Debug and diagnostics</Text>
           <Button
-            label={isExporting ? 'Preparing export...' : 'Export local debug data'}
+            label="Export local debug data"
+            loading={isExporting}
+            loadingLabel="Preparing export..."
             onPress={() => void exportLocalData()}
             variant="secondary"
-            disabled={isExporting}
           />
-          <Text style={[styles.diagnosticLine, { color: colors.mutedInk }]}>{Object.keys(filesById).length} files cached in the current local snapshot</Text>
-          <Text style={[styles.diagnosticLine, { color: colors.mutedInk }]}>{queueOrder.length} queue positions tracked locally</Text>
+          <Text style={[styles.diagnosticLine, { color: colors.mutedInk }]}>{Object.keys(filesById).length} files cached in the current in-memory snapshot</Text>
+          <Text style={[styles.diagnosticLine, { color: colors.mutedInk }]}>{queueOrder.length} queue positions active in this pass</Text>
           <Text style={[styles.diagnosticLine, { color: colors.mutedInk }]}>{newSinceLastScanCount} photos currently marked new since last scan</Text>
           <Text style={[styles.diagnosticLine, { color: colors.mutedInk }]}>{analyticsEvents.length} analytics events stored locally</Text>
           <Text style={[styles.diagnosticLine, { color: colors.mutedInk }]}>{actionLogs.length} action log entries stored locally</Text>
@@ -270,12 +334,12 @@ export default function SettingsScreen() {
 
         <View style={[styles.section, styles.dangerSection, { backgroundColor: colors.surface, borderColor: isDark ? colors.delete : 'rgba(231,111,81,0.22)' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Danger zone</Text>
-          <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>Clearing local data removes the saved queue, recent history, and current session from this device only.</Text>
+          <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>Clearing local data removes your saved preferences, debug history, and current in-memory session from this device only.</Text>
           <Button
             label="Clear local session data"
             variant="danger"
             onPress={() => {
-              Alert.alert('Clear local state?', 'This removes your saved queue, history, and current session from this device.', [
+              Alert.alert('Clear local state?', 'This removes your saved preferences, history, and current session from this device.', [
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Clear',
@@ -301,6 +365,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
     paddingBottom: spacing.xl,
     gap: spacing.md,
   },
@@ -337,6 +402,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  settingRowDisabled: {
+    opacity: 0.55,
+  },
   settingLabel: {
     fontFamily: typography.body,
     fontSize: 16,
@@ -352,10 +420,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },
+  pressedChip: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
+  },
   modeChipLabel: {
     fontFamily: typography.bold,
     fontSize: 14,
     textTransform: 'uppercase',
+  },
+  linkPressed: {
+    opacity: 0.72,
   },
   diagnosticLine: {
     fontFamily: typography.body,

@@ -6,11 +6,12 @@ import { Button } from '../ui/button';
 
 type PermissionPanelProps = {
   blocked: boolean;
+  isRetrying?: boolean;
   onRetry: () => void;
   onOpenSettings: () => void;
 };
 
-export function PermissionPanel({ blocked, onRetry, onOpenSettings }: PermissionPanelProps) {
+export function PermissionPanel({ blocked, isRetrying = false, onRetry, onOpenSettings }: PermissionPanelProps) {
   const { colors, isNightMode } = useAppTheme();
 
   return (
@@ -25,8 +26,13 @@ export function PermissionPanel({ blocked, onRetry, onOpenSettings }: Permission
         </Text>
       ) : null}
       <View style={styles.actions}>
-        <Button label={blocked ? 'Open settings' : 'Try again'} onPress={blocked ? onOpenSettings : onRetry} />
-        {!blocked ? <Button label="Settings" onPress={onOpenSettings} variant="secondary" /> : null}
+        <Button
+          label={blocked ? 'Open settings' : 'Try again'}
+          loading={!blocked && isRetrying}
+          loadingLabel="Checking access..."
+          onPress={blocked ? onOpenSettings : onRetry}
+        />
+        {!blocked ? <Button label="Settings" onPress={onOpenSettings} variant="secondary" disabled={isRetrying} /> : null}
       </View>
     </View>
   );

@@ -52,13 +52,13 @@ export function PhotoPreviewModal({
   return (
     <Modal visible={visible} animationType={animationsEnabled ? 'fade' : 'none'} onRequestClose={onClose}>
       <View style={styles.wrap}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
           <View style={styles.header}>
             <View style={styles.headerCopy}>
               <Text style={styles.eyebrow}>Full preview</Text>
               <Text style={styles.title}>Inspect before you decide</Text>
             </View>
-            <Pressable android_disableSound={!soundEnabled} onPress={onClose}>
+            <Pressable android_disableSound={!soundEnabled} onPress={onClose} style={({ pressed }) => pressed && styles.linkPressed}>
               <Text style={styles.closeLink}>Close</Text>
             </Pressable>
           </View>
@@ -98,11 +98,12 @@ export function PhotoPreviewModal({
                     <Button label="Skip" onPress={onSkip} variant="secondary" compact style={styles.actionButton} />
                     <Button label="Share" onPress={onShare} variant="secondary" compact style={styles.actionButton} />
                     <Button
-                      label={isDeleting ? 'Deleting...' : 'Delete'}
+                      label="Delete"
+                      loading={isDeleting}
+                      loadingLabel="Deleting..."
                       onPress={onDelete}
                       variant="danger"
                       compact
-                      disabled={isDeleting}
                       style={styles.actionButton}
                     />
                   </View>
@@ -126,6 +127,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
     gap: spacing.md,
   },
   header: {
@@ -157,6 +159,9 @@ const styles = StyleSheet.create({
     fontFamily: typography.medium,
     fontSize: 15,
     paddingVertical: spacing.xs,
+  },
+  linkPressed: {
+    opacity: 0.72,
   },
   content: {
     flex: 1,

@@ -30,7 +30,7 @@ export function SecondaryActionsSheet({ visible, fileName, onClose, onMove, onSh
       ) : null}
       <Button label="Move to album" onPress={onMove} variant="secondary" />
       <Button label="Share photo" onPress={onShare} variant="secondary" />
-      <Pressable accessibilityRole="button" onPress={onClose} style={styles.closeLinkWrap}>
+      <Pressable accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.closeLinkWrap, pressed && styles.linkPressed]}>
         <Text style={[styles.closeLink, { color: colors.progress }]}>Back to queue</Text>
       </Pressable>
     </Sheet>
@@ -65,6 +65,9 @@ const styles = StyleSheet.create({
   closeLinkWrap: {
     alignSelf: 'center',
     paddingTop: spacing.xs,
+  },
+  linkPressed: {
+    opacity: 0.72,
   },
   closeLink: {
     fontFamily: typography.medium,

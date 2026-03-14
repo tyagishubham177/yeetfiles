@@ -23,13 +23,25 @@ export function ActionDock({ onKeep, onDelete, onSkip, onUndo, undoCount = 0, di
         <Button label="Keep" onPress={onKeep} disabled={disabled} style={styles.grow} />
       </View>
       <View style={styles.secondaryRow}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Skip this photo for later" disabled={disabled} onPress={onSkip}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Skip this photo for later"
+          disabled={disabled}
+          onPress={onSkip}
+          style={({ pressed }) => pressed && !disabled && styles.linkPressed}
+        >
           <Text style={[styles.skip, { color: isNightMode ? 'rgba(245,247,250,0.78)' : 'rgba(249,250,251,0.86)' }, disabled && styles.skipDisabled]}>
             Skip for now
           </Text>
         </Pressable>
         {onUndo && undoCount > 0 ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={`Undo one of the last ${undoCount} safe actions`} disabled={disabled} onPress={onUndo}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Undo one of the last ${undoCount} safe actions`}
+            disabled={disabled}
+            onPress={onUndo}
+            style={({ pressed }) => pressed && !disabled && styles.linkPressed}
+          >
             <Text style={[styles.undo, { color: colors.highlight }, disabled && styles.skipDisabled]}>
               Undo ({undoCount})
             </Text>
@@ -65,6 +77,9 @@ const styles = StyleSheet.create({
     fontFamily: typography.bold,
     fontSize: 15,
     paddingVertical: spacing.xs,
+  },
+  linkPressed: {
+    opacity: 0.72,
   },
   skipDisabled: {
     opacity: 0.5,

@@ -23,7 +23,7 @@ export function FilterChipRow({ activeFilter, chips, onSelect }: FilterChipRowPr
             key={chip.id}
             accessibilityRole="button"
             onPress={() => onSelect(chip.id)}
-            style={[
+            style={({ pressed }) => [
               styles.chip,
               {
                 backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)',
@@ -33,6 +33,7 @@ export function FilterChipRow({ activeFilter, chips, onSelect }: FilterChipRowPr
                 backgroundColor: colors.highlight,
                 borderColor: isNightMode ? 'rgba(217,162,59,0.38)' : 'rgba(243,180,63,0.4)',
               },
+              pressed && styles.pressedChip,
             ]}
           >
             <Text style={[styles.label, { color: selected ? colors.ink : isNightMode ? 'rgba(245,247,250,0.82)' : 'rgba(249,250,251,0.84)' }]}>
@@ -55,6 +56,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderWidth: 1,
+  },
+  pressedChip: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
   },
   label: {
     fontFamily: typography.medium,
