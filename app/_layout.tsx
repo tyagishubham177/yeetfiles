@@ -35,7 +35,7 @@ export default function RootLayout() {
     return (
       <View style={[styles.bootWrap, { backgroundColor: colors.canvas }]}>
         <Text style={[styles.bootTitle, { color: colors.ink }]}>FileSwipe</Text>
-        <Text style={[styles.bootBody, { color: colors.mutedInk }]}>Restoring your local queue...</Text>
+        <Text style={[styles.bootBody, { color: colors.mutedInk }]}>Loading your cleanup workspace...</Text>
       </View>
     );
   }

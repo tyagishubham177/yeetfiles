@@ -17,10 +17,11 @@ import { PermissionPanel } from '../../src/components/review/permission-panel';
 import { ProgressHeader } from '../../src/components/review/progress-header';
 import { SecondaryActionsSheet } from '../../src/components/review/secondary-actions-sheet';
 import { UndoToast } from '../../src/components/review/undo-toast';
+import { StatusBanner } from '../../src/components/feedback/status-banner';
 import { Button } from '../../src/components/ui/button';
 import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
-import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
+import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
 import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
@@ -96,7 +97,9 @@ export default function QueueScreen() {
   const [pendingAlbumName, setPendingAlbumName] = useState('');
   const [loadingMoveTargets, setLoadingMoveTargets] = useState(false);
   const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
-  const [secondaryFeedback, setSecondaryFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [isCheckingPermission, setIsCheckingPermission] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     if (sessionSummary) {
@@ -171,16 +174,16 @@ export default function QueueScreen() {
   }, [activeMilestone, dismissMilestone]);
 
   useEffect(() => {
-    if (!secondaryFeedback) {
+    if (!statusFeedback) {
       return;
     }
 
     const timeoutId = setTimeout(() => {
-      setSecondaryFeedback(null);
+      setStatusFeedback(null);
     }, 3200);
 
     return () => clearTimeout(timeoutId);
-  }, [secondaryFeedback]);
+  }, [statusFeedback]);
 
   useEffect(() => {
     const uris = [currentFile?.previewUri, ...nextItems.map((item) => item.previewUri)].filter(Boolean) as string[];
@@ -191,21 +194,55 @@ export default function QueueScreen() {
   }, [currentFile?.previewUri, nextItems]);
 
   const retryPermission = async () => {
-    const nextPermissionState = await requestMediaPermissionState();
-    setPermissionState(nextPermissionState);
+    setIsCheckingPermission(true);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Checking photo access and preparing a fresh queue...',
+    });
 
-    if (nextPermissionState === 'blocked') {
-      Alert.alert('Media permission blocked', MEDIA_PERMISSION_BLOCKED_HELP);
+    try {
+      const nextPermissionState = await requestMediaPermissionState();
+      setPermissionState(nextPermissionState);
+
+      if (nextPermissionState === 'blocked') {
+        setStatusFeedback({
+          tone: 'error',
+          message: 'Photo access is blocked in system settings right now.',
+        });
+        Alert.alert('Media permission blocked', MEDIA_PERMISSION_BLOCKED_HELP);
+        return;
+      }
+
+      setStatusFeedback({
+        tone: 'success',
+        message: 'Photo access granted. FileSwipe is building the queue now.',
+      });
+    } finally {
+      setIsCheckingPermission(false);
     }
   };
 
   const confirmDelete = async () => {
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Deleting the current photo...',
+    });
     const result = await deleteCurrent();
     setDeleteSheetOpen(false);
 
     if (!result.ok) {
+      setStatusFeedback({
+        tone: 'error',
+        message: `Delete failed: ${result.message}`,
+      });
       Alert.alert('Delete failed', result.message);
+      return;
     }
+
+    setStatusFeedback({
+      tone: 'success',
+      message: 'Photo deleted. Session stats are updated.',
+    });
   };
 
   const openPreview = () => {
@@ -234,9 +271,15 @@ export default function QueueScreen() {
   };
 
   const shareCurrent = async () => {
-    if (!currentFile) {
+    if (!currentFile || isSharing) {
       return;
     }
+
+    setIsSharing(true);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Opening the native share sheet...',
+    });
 
     try {
       await Share.share({
@@ -244,8 +287,18 @@ export default function QueueScreen() {
         message: currentFile.name,
         url: currentFile.uri,
       });
+      setStatusFeedback({
+        tone: 'success',
+        message: 'Share sheet opened.',
+      });
     } catch {
+      setStatusFeedback({
+        tone: 'error',
+        message: 'We could not open the native share sheet for this photo.',
+      });
       Alert.alert('Share unavailable', 'We could not open the native share sheet for this photo.');
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -259,12 +312,24 @@ export default function QueueScreen() {
 
   const loadMoveTargets = async () => {
     setLoadingMoveTargets(true);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Loading albums from your media library...',
+    });
 
     try {
       const targets = await getMoveTargets();
       setAvailableMoveTargets(targets);
+      setStatusFeedback({
+        tone: 'success',
+        message: targets.length > 0 ? 'Albums ready. Pick a destination.' : 'No albums found yet. You can create a new one below.',
+      });
     } catch {
       setMoveErrorMessage('We could not load the media-library albums. Try again.');
+      setStatusFeedback({
+        tone: 'error',
+        message: 'We could not load the media-library albums. Try again.',
+      });
     } finally {
       setLoadingMoveTargets(false);
     }
@@ -273,14 +338,22 @@ export default function QueueScreen() {
   const confirmMove = async () => {
     if (!selectedMoveTarget) {
       setMoveErrorMessage('Choose a destination folder before confirming the move.');
+      setStatusFeedback({
+        tone: 'error',
+        message: 'Choose a destination folder before confirming the move.',
+      });
       return;
     }
 
+    setStatusFeedback({
+      tone: 'info',
+      message: `Moving photo to ${selectedMoveTarget.label}...`,
+    });
     const result = await moveCurrent(selectedMoveTarget);
 
     if (!result.ok) {
       setMoveErrorMessage(result.message);
-      setSecondaryFeedback({
+      setStatusFeedback({
         tone: 'error',
         message: `Move failed: ${result.message}`,
       });
@@ -292,7 +365,7 @@ export default function QueueScreen() {
     setSecondaryActionsOpen(false);
     setSelectedMoveTarget(result.target);
     setPendingAlbumName('');
-    setSecondaryFeedback({
+    setStatusFeedback({
       tone: 'success',
       message: `Moved to ${result.target.label}`,
     });
@@ -309,9 +382,20 @@ export default function QueueScreen() {
   const handleUndo = () => {
     undoLastAction();
     triggerInteractionFeedback('undo', settings.hapticsEnabled);
+    setStatusFeedback({
+      tone: 'success',
+      message: 'Last safe action undone.',
+    });
   };
 
   const busy = isDeleting || isMoving;
+  const handleRescanRequest = () => {
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Fresh scan queued. FileSwipe is rebuilding the queue in the background.',
+    });
+    requestRescan();
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.stage }]} edges={['top', 'bottom']}>
@@ -321,7 +405,11 @@ export default function QueueScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
           <Text style={[styles.queueTitle, { color: colors.white }]}>Queue</Text>
-          <Pressable android_disableSound={!settings.soundEnabled} onPress={() => router.push(ROUTES.settings)}>
+          <Pressable
+            android_disableSound={!settings.soundEnabled}
+            onPress={() => router.push(ROUTES.settings)}
+            style={({ pressed }) => pressed && styles.linkPressed}
+          >
             <Text style={[styles.settingsLink, { color: isNightMode ? 'rgba(245,247,250,0.78)' : 'rgba(249,250,251,0.84)' }]}>Settings</Text>
           </Pressable>
         </View>
@@ -352,10 +440,11 @@ export default function QueueScreen() {
                 accessibilityRole="button"
                 android_disableSound={!settings.soundEnabled}
                 onPress={() => setSortMode(option)}
-                style={[
+                style={({ pressed }) => [
                   styles.sortChip,
                   { backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.06)' },
                   selected && { backgroundColor: isNightMode ? 'rgba(76,151,232,0.2)' : 'rgba(60,145,230,0.28)' },
+                  pressed && styles.pressedChip,
                 ]}
               >
                 <Text style={[styles.sortChipLabel, { color: selected ? colors.white : isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
@@ -383,9 +472,10 @@ export default function QueueScreen() {
             </Text>
           </View>
         ) : null}
+        {statusFeedback ? <StatusBanner message={statusFeedback.message} tone={statusFeedback.tone} /> : null}
 
         {permissionMissing ? (
-          <PermissionPanel blocked={blocked} onRetry={() => void retryPermission()} onOpenSettings={() => void Linking.openSettings()} />
+          <PermissionPanel blocked={blocked} isRetrying={isCheckingPermission} onRetry={() => void retryPermission()} onOpenSettings={() => void Linking.openSettings()} />
         ) : currentFile ? (
           <>
             <View style={styles.scanRow}>
@@ -432,24 +522,6 @@ export default function QueueScreen() {
                 <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
                   {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} stayed protected. {formatDateTime(lastRescanSummary.completedAt)}
                 </Text>
-              </View>
-            ) : null}
-            {secondaryFeedback ? (
-              <View
-                style={[
-                  styles.secondaryFeedbackCard,
-                  secondaryFeedback.tone === 'error'
-                    ? {
-                        backgroundColor: isNightMode ? 'rgba(221,115,89,0.12)' : 'rgba(231,111,81,0.16)',
-                        borderColor: isNightMode ? 'rgba(221,115,89,0.18)' : 'rgba(231,111,81,0.3)',
-                      }
-                    : {
-                        backgroundColor: isNightMode ? 'rgba(42,185,119,0.12)' : 'rgba(46,194,126,0.16)',
-                        borderColor: isNightMode ? 'rgba(42,185,119,0.18)' : 'rgba(46,194,126,0.3)',
-                      },
-                ]}
-              >
-                <Text style={[styles.secondaryFeedbackText, { color: colors.white }]}>{secondaryFeedback.message}</Text>
               </View>
             ) : null}
             <View style={styles.cardWrap}>
@@ -515,13 +587,13 @@ export default function QueueScreen() {
                 {scanProgressTotal ? `${Math.round(scanProgressRatio * 100)}% complete` : 'This can take longer on larger libraries.'}
               </Text>
               <View style={styles.scanLoadingActions}>
-                <Button label="Restart scan" onPress={requestRescan} variant="secondary" />
+                <Button label="Restart scan" onPress={handleRescanRequest} variant="secondary" />
               </View>
             </View>
           </View>
         ) : (
           <View style={styles.emptyWrap}>
-            <EmptyState title="No photo cards ready yet" body="Try a fresh scan, then come back into the queue." actionLabel="Scan again" onAction={requestRescan} />
+            <EmptyState title="No photo cards ready yet" body="Try a fresh scan, then come back into the queue." actionLabel="Scan again" onAction={handleRescanRequest} />
           </View>
         )}
       </ScrollView>
@@ -547,7 +619,7 @@ export default function QueueScreen() {
         ) : null}
         <View style={styles.sheetActions}>
           <Button label="Cancel" onPress={() => setDeleteSheetOpen(false)} variant="secondary" />
-          <Button label={isDeleting ? 'Deleting...' : 'Delete permanently'} onPress={() => void confirmDelete()} variant="danger" disabled={busy} />
+          <Button label="Delete permanently" loading={isDeleting} loadingLabel="Deleting..." onPress={() => void confirmDelete()} variant="danger" disabled={busy && !isDeleting} />
         </View>
       </Sheet>
 
@@ -620,6 +692,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
     gap: spacing.md,
     minHeight: '100%',
@@ -636,6 +709,9 @@ const styles = StyleSheet.create({
   settingsLink: {
     fontFamily: typography.medium,
     fontSize: 15,
+  },
+  linkPressed: {
+    opacity: 0.72,
   },
   scanRow: {
     minHeight: 22,
@@ -666,17 +742,6 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 13,
     lineHeight: 20,
-  },
-  secondaryFeedbackCard: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  secondaryFeedbackText: {
-    fontFamily: typography.medium,
-    fontSize: 14,
-    lineHeight: 21,
   },
   cardWrap: {
     flex: 1,
@@ -733,6 +798,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
+  },
+  pressedChip: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
   },
   sortChipLabel: {
     fontFamily: typography.medium,

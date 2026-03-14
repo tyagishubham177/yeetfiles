@@ -63,15 +63,16 @@ export function MoveDestinationSheet({
                   key={`${target.albumId ?? 'new'}-${target.albumName}`}
                   accessibilityRole="button"
                   onPress={() => onSelectTarget(target)}
-                  style={[
+                  style={({ pressed }) => [
                     styles.chip,
                     {
-                      backgroundColor: selected ? colors.ink : colors.surfaceMuted,
-                      borderColor: selected ? colors.ink : isDark ? colors.outline : 'transparent',
+                      backgroundColor: selected ? colors.action : colors.surfaceMuted,
+                      borderColor: selected ? colors.action : isDark ? colors.outline : 'transparent',
                     },
+                    pressed && styles.pressedItem,
                   ]}
                 >
-                  <Text style={[styles.chipLabel, { color: selected ? colors.white : colors.ink }]}>{target.label}</Text>
+                  <Text style={[styles.chipLabel, { color: selected ? colors.onAction : colors.ink }]}>{target.label}</Text>
                 </Pressable>
               );
             })}
@@ -93,15 +94,16 @@ export function MoveDestinationSheet({
                   key={target.albumId ?? target.albumName}
                   accessibilityRole="button"
                   onPress={() => onSelectTarget(target)}
-                  style={[
+                  style={({ pressed }) => [
                     styles.targetOption,
                     {
-                      backgroundColor: selected ? colors.ink : colors.surfaceMuted,
-                      borderColor: selected ? colors.ink : isDark ? colors.outline : 'transparent',
+                      backgroundColor: selected ? colors.action : colors.surfaceMuted,
+                      borderColor: selected ? colors.action : isDark ? colors.outline : 'transparent',
                     },
+                    pressed && styles.pressedItem,
                   ]}
                 >
-                  <Text style={[styles.targetOptionLabel, { color: selected ? colors.white : colors.ink }]}>{target.label}</Text>
+                  <Text style={[styles.targetOptionLabel, { color: selected ? colors.onAction : colors.ink }]}>{target.label}</Text>
                 </Pressable>
               );
             })}
@@ -136,7 +138,7 @@ export function MoveDestinationSheet({
 
       <View style={styles.actions}>
         <Button label="Back" onPress={onClose} variant="ghost" />
-        <Button label={isMoving ? 'Moving...' : 'Confirm move'} onPress={onConfirmMove} disabled={!selectedTarget || isMoving} />
+        <Button label="Confirm move" loading={isMoving} loadingLabel="Moving photo..." onPress={onConfirmMove} disabled={!selectedTarget} />
       </View>
     </Sheet>
   );
@@ -178,6 +180,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  pressedItem: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
   },
   chipLabel: {
     fontFamily: typography.medium,

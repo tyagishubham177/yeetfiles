@@ -1,15 +1,17 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
+import { StatusBar } from 'expo-status-bar';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { StatusBanner } from '../src/components/feedback/status-banner';
 import { Button } from '../src/components/ui/button';
 import { ROUTES } from '../src/constants/routes';
 import { radius, spacing, typography } from '../src/constants/ui-tokens';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../src/features/permissions/permission-service';
 import { formatBytes, formatDuration } from '../src/lib/format';
 import { useAppTheme } from '../src/lib/theme';
-import { getQuickSessionLabel, selectResumeAvailable, useAppStore } from '../src/store/app-store';
+import { getQuickSessionLabel, useAppStore } from '../src/store/app-store';
 import type { QuickSessionTarget } from '../src/types/file-item';
 
 const SESSION_OPTIONS: QuickSessionTarget[] = [10, 25, 50];
@@ -17,7 +19,6 @@ const SESSION_OPTIONS: QuickSessionTarget[] = [10, 25, 50];
 export default function WelcomeScreen() {
   const router = useRouter();
   const { colors, isDark } = useAppTheme();
-  const resumeAvailable = useAppStore(selectResumeAvailable);
   const currentFileId = useAppStore((state) => state.currentFileId);
   const lowStorageWarning = useAppStore((state) => state.lowStorageWarning);
   const beginQuickSession = useAppStore((state) => state.beginQuickSession);
@@ -28,25 +29,30 @@ export default function WelcomeScreen() {
   const lastCompletedScanAt = useAppStore((state) => state.lastCompletedScanAt);
   const hasCompletedOnboarding = useAppStore((state) => state.settings.hasCompletedOnboarding);
   const [busy, setBusy] = useState(false);
+  const [launchMessage, setLaunchMessage] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<QuickSessionTarget>((targetCount as QuickSessionTarget | null) ?? 10);
 
   const dashboardLabel = useMemo(() => getQuickSessionLabel(selectedTarget), [selectedTarget]);
 
-  const goToQueue = async (resetProgress: boolean, nextTarget: QuickSessionTarget) => {
+  const goToQueue = async (nextTarget: QuickSessionTarget) => {
     setBusy(true);
+    setLaunchMessage('Checking photo access and warming up a fresh session...');
 
     try {
-      if (resetProgress && !currentFileId) {
+      if (!currentFileId) {
         requestRescan({ resetSession: true });
       }
 
-      beginQuickSession(nextTarget, resetProgress);
+      beginQuickSession(nextTarget, true);
 
       const permissionState = await requestMediaPermissionState();
       setPermissionState(permissionState);
 
       if (permissionState === 'blocked') {
+        setLaunchMessage('Photo access is blocked, so FileSwipe will guide you to settings next.');
         Alert.alert('Media permission blocked', MEDIA_PERMISSION_BLOCKED_HELP);
+      } else {
+        setLaunchMessage('Fresh session ready. Taking you into the queue...');
       }
 
       router.replace(ROUTES.queue);
@@ -56,7 +62,8 @@ export default function WelcomeScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right']}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroWrap}>
           <View style={[styles.heroOrbA, { backgroundColor: isDark ? 'rgba(217,162,59,0.16)' : 'rgba(243,180,63,0.28)' }]} />
@@ -86,15 +93,16 @@ export default function WelcomeScreen() {
                   key={option}
                   accessibilityRole="button"
                   onPress={() => setSelectedTarget(option)}
-                  style={[
+                  style={({ pressed }) => [
                     styles.sessionChip,
                     {
-                      backgroundColor: selected ? colors.ink : colors.surfaceMuted,
-                      borderColor: selected ? colors.ink : isDark ? colors.outline : 'transparent',
+                      backgroundColor: selected ? colors.action : colors.surfaceMuted,
+                      borderColor: selected ? colors.action : isDark ? colors.outline : 'transparent',
                     },
+                    pressed && styles.pressedCard,
                   ]}
                 >
-                  <Text style={[styles.sessionChipLabel, { color: selected ? colors.white : colors.ink }]}>{getQuickSessionLabel(option)}</Text>
+                  <Text style={[styles.sessionChipLabel, { color: selected ? colors.onAction : colors.ink }]}>{getQuickSessionLabel(option)}</Text>
                   <Text style={[styles.sessionChipSubtle, { color: selected ? 'rgba(249,250,251,0.72)' : colors.mutedInk }]}>
                     {option === 10 ? '2 min' : option === 25 ? '5 min' : '10 min'}
                   </Text>
@@ -112,14 +120,17 @@ export default function WelcomeScreen() {
             </View>
           ) : null}
           <View style={styles.actionStack}>
-            <Button label={busy ? 'Starting...' : `Start ${dashboardLabel}`} onPress={() => void goToQueue(true, selectedTarget)} disabled={busy} />
-            {resumeAvailable ? (
-              <Button label={`Resume ${getQuickSessionLabel((targetCount as QuickSessionTarget | null) ?? selectedTarget)}`} onPress={() => void goToQueue(false, selectedTarget)} variant="secondary" disabled={busy} />
-            ) : null}
+            <Button
+              label={`Start ${dashboardLabel}`}
+              loading={busy}
+              loadingLabel="Checking permissions..."
+              onPress={() => void goToQueue(selectedTarget)}
+            />
           </View>
+          {launchMessage ? <StatusBanner message={launchMessage} /> : null}
           <View style={[styles.trustNote, { borderTopColor: colors.outline }]}>
             <Text style={[styles.trustTitle, { color: colors.ink }]}>Trust note</Text>
-            <Text style={[styles.trustBody, { color: colors.mutedInk }]}>No cloud upload. No silent deletes. Queue, filters, and your quick-session target come back after restart.</Text>
+            <Text style={[styles.trustBody, { color: colors.mutedInk }]}>No cloud upload. No silent deletes. Each fresh app launch starts from a fresh scan instead of restoring an old queue.</Text>
           </View>
         </View>
       </ScrollView>
@@ -134,6 +145,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
     paddingBottom: spacing.lg,
     justifyContent: 'space-between',
     gap: spacing.xl,
@@ -221,6 +233,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: spacing.md,
     gap: 4,
+  },
+  pressedCard: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
   },
   sessionChipLabel: {
     fontFamily: typography.bold,

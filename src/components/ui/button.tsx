@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 import { radius, spacing, typography } from '../../constants/ui-tokens';
 import { useAppTheme } from '../../lib/theme';
@@ -9,6 +9,8 @@ type ButtonProps = {
   onPress: () => void;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   disabled?: boolean;
+  loading?: boolean;
+  loadingLabel?: string;
   compact?: boolean;
   style?: ViewStyle;
 };
@@ -18,40 +20,46 @@ export function Button({
   onPress,
   variant = 'primary',
   disabled = false,
+  loading = false,
+  loadingLabel,
   compact = false,
   style,
 }: ButtonProps) {
   const soundEnabled = useAppStore((state) => state.settings.soundEnabled);
   const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
   const { colors, isDark } = useAppTheme();
+  const resolvedDisabled = disabled || loading;
+  const labelColor =
+    variant === 'primary'
+      ? colors.onAction
+      : variant === 'danger'
+        ? colors.white
+        : variant === 'ghost' && isDark
+          ? colors.progress
+          : colors.ink;
 
   return (
     <Pressable
       accessibilityRole="button"
       android_disableSound={!soundEnabled}
-      disabled={disabled}
+      disabled={resolvedDisabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.base,
         compact && styles.compact,
-        variant === 'primary' && { backgroundColor: colors.ink },
+        variant === 'primary' && { backgroundColor: colors.action },
         variant === 'secondary' && { backgroundColor: colors.surfaceMuted },
         variant === 'danger' && { backgroundColor: colors.delete },
         variant === 'ghost' && styles.ghost,
-        pressed && !disabled && animationsEnabled && styles.pressed,
-        disabled && styles.disabled,
+        pressed && !resolvedDisabled && animationsEnabled && styles.pressed,
+        resolvedDisabled && styles.disabled,
         style,
       ]}
     >
-      <Text
-        style={[
-          styles.label,
-          { color: variant === 'secondary' || variant === 'ghost' ? colors.ink : colors.white },
-          variant === 'ghost' && isDark && { color: colors.progress },
-        ]}
-      >
-        {label}
-      </Text>
+      <View style={styles.content}>
+        {loading ? <ActivityIndicator color={labelColor} size="small" /> : null}
+        <Text style={[styles.label, { color: labelColor }]}>{loading ? loadingLabel ?? label : label}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -67,6 +75,12 @@ const styles = StyleSheet.create({
   compact: {
     minHeight: 44,
     paddingHorizontal: spacing.md,
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
   },
   ghost: {
     backgroundColor: 'transparent',
