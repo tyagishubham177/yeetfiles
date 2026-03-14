@@ -240,16 +240,6 @@ function parseDateValue(value: string | null): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function randomizeDeterministically(seed: string): number {
-  let hash = 0;
-
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
-  }
-
-  return hash;
-}
-
 function getSmartSortScore(file: FileItem): number {
   let score = 0;
 
@@ -304,13 +294,6 @@ function compareFiles(left: FileItem, right: FileItem, sortMode: SortMode, queue
     }
   }
 
-  if (sortMode === 'random') {
-    const randomDelta = randomizeDeterministically(left.id) - randomizeDeterministically(right.id);
-    if (randomDelta !== 0) {
-      return randomDelta;
-    }
-  }
-
   if (sortMode === 'smart') {
     const smartDelta = getSmartSortScore(right) - getSmartSortScore(left);
     if (smartDelta !== 0) {
@@ -331,6 +314,19 @@ function compareFiles(left: FileItem, right: FileItem, sortMode: SortMode, queue
   return (queueIndex.get(left.id) ?? 0) - (queueIndex.get(right.id) ?? 0);
 }
 
+function shuffleFiles(files: FileItem[]): FileItem[] {
+  const shuffled = [...files];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    const current = shuffled[index];
+    shuffled[index] = shuffled[randomIndex];
+    shuffled[randomIndex] = current;
+  }
+
+  return shuffled;
+}
+
 function getVisibleQueueIds(state: Pick<PersistedAppState, 'queueOrder' | 'filesById' | 'activeFilter' | 'sortMode'>): string[] {
   if (
     cachedVisibleQueueOrder === state.queueOrder &&
@@ -343,11 +339,14 @@ function getVisibleQueueIds(state: Pick<PersistedAppState, 'queueOrder' | 'files
 
   const queueIndex = new Map(state.queueOrder.map((fileId, index) => [fileId, index]));
 
-  const visibleQueueIds = state.queueOrder
+  const actionableFiles = state.queueOrder
     .map((fileId) => state.filesById[fileId])
-    .filter((file): file is FileItem => Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter))
-    .sort((left, right) => compareFiles(left, right, state.sortMode, queueIndex))
-    .map((file) => file.id);
+    .filter((file): file is FileItem => Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter));
+
+  const visibleQueueIds =
+    state.sortMode === 'random'
+      ? shuffleFiles(actionableFiles).map((file) => file.id)
+      : actionableFiles.sort((left, right) => compareFiles(left, right, state.sortMode, queueIndex)).map((file) => file.id);
 
   cachedVisibleQueueOrder = state.queueOrder;
   cachedVisibleFilesById = state.filesById;
