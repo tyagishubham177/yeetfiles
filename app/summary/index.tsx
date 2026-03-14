@@ -9,12 +9,16 @@ import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
 import { formatBytes, formatDuration } from '../../src/lib/format';
-import { getQuickSessionLabel, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
+import { getQuickSessionLabel, selectNewSinceLastScanCount, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
 
 export default function SummaryScreen() {
   const router = useRouter();
   const summary = useAppStore((state) => state.sessionSummary);
   const currentFileId = useAppStore((state) => state.currentFileId);
+  const scanState = useAppStore((state) => state.scanState);
+  const scanMode = useAppStore((state) => state.scanMode);
+  const lastRescanSummary = useAppStore((state) => state.lastRescanSummary);
+  const newSinceLastScanCount = useAppStore(selectNewSinceLastScanCount);
   const beginQuickSession = useAppStore((state) => state.beginQuickSession);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const dismissSummary = useAppStore((state) => state.dismissSummary);
@@ -45,7 +49,7 @@ export default function SummaryScreen() {
     if (currentFileId) {
       beginQuickSession((summary.targetCount as 10 | 25 | 50 | null) ?? 10, true);
     } else {
-      requestRescan();
+      requestRescan({ resetSession: true });
     }
 
     router.replace(ROUTES.queue);
@@ -53,7 +57,7 @@ export default function SummaryScreen() {
 
   const restartGame = () => {
     dismissSummary();
-    requestRescan();
+    requestRescan({ resetSession: true });
     router.replace(ROUTES.queue);
   };
 
@@ -101,8 +105,27 @@ export default function SummaryScreen() {
 
         <View style={styles.actions}>
           <Button label="Continue cleaning" onPress={continueCleaning} />
-          <Button label="Start fresh scan" onPress={restartGame} variant="secondary" />
+          <Button
+            label={scanState === 'scanning' && scanMode === 'rescan' ? 'Re-scanning photos...' : 'Check for new photos'}
+            onPress={restartGame}
+            variant="secondary"
+            disabled={scanState === 'scanning' && scanMode === 'rescan'}
+          />
           <Button label="Back to welcome" onPress={() => router.replace(ROUTES.welcome)} variant="ghost" />
+        </View>
+
+        <View style={styles.rescanCard}>
+          <Text style={styles.rescanTitle}>Re-scan lane</Text>
+          <Text style={styles.rescanBody}>
+            {newSinceLastScanCount > 0
+              ? `${newSinceLastScanCount} photo${newSinceLastScanCount === 1 ? '' : 's'} are still marked new since the last scan.`
+              : 'Check the library again after you add new photos outside the app.'}
+          </Text>
+          {lastRescanSummary ? (
+            <Text style={styles.rescanHint}>
+              Last re-scan added {lastRescanSummary.newFileCount} new and kept {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} out of the queue.
+            </Text>
+          ) : null}
         </View>
 
         {topUndoEntry ? (
@@ -198,5 +221,29 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: spacing.sm,
+  },
+  rescanCard: {
+    borderRadius: radius.lg,
+    backgroundColor: '#EEF4FB',
+    padding: spacing.lg,
+    gap: 6,
+  },
+  rescanTitle: {
+    color: colors.ink,
+    fontFamily: typography.bold,
+    fontSize: 15,
+    textTransform: 'uppercase',
+  },
+  rescanBody: {
+    color: colors.ink,
+    fontFamily: typography.body,
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  rescanHint: {
+    color: colors.mutedInk,
+    fontFamily: typography.body,
+    fontSize: 14,
+    lineHeight: 22,
   },
 });

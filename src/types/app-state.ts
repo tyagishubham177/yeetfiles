@@ -24,6 +24,13 @@ export type SessionSummary = {
   targetCount: QuickSessionTarget | null;
 };
 
+export type RescanSummary = {
+  completedAt: string;
+  newFileCount: number;
+  matchedFileCount: number;
+  protectedReviewedCount: number;
+};
+
 export type MoveTarget = {
   albumId?: string | null;
   albumName: string;
@@ -41,6 +48,7 @@ export type UndoEntry = {
   fileName: string;
   action: UndoableAction;
   previousStatus: FileStatus;
+  previousIsNewSinceLastScan: boolean;
   previousQueueOrder: string[];
   previousCurrentFileId: string | null;
   previousSessionStats: SessionStats;
@@ -68,6 +76,7 @@ export type SettingsState = {
 };
 
 export type ScanState = 'idle' | 'scanning' | 'ready' | 'error';
+export type ScanMode = 'initial' | 'rescan';
 
 export type PersistedAppState = {
   permissionState: PermissionState;
@@ -82,9 +91,14 @@ export type PersistedAppState = {
   analyticsEvents: AnalyticsEvent[];
   lastCompletedScanAt: string | null;
   scanState: ScanState;
+  scanMode: ScanMode;
   scanProgressLoaded: number;
   scanProgressTotal: number | null;
+  currentScanNewFileCount: number;
+  currentScanMatchedFileCount: number;
+  currentScanProtectedReviewedCount: number;
   scanError: string | null;
+  lastRescanSummary: RescanSummary | null;
   sessionId: string | null;
   sessionStats: SessionStats;
   sessionSummary: SessionSummary | null;

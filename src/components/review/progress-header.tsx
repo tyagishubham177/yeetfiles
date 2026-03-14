@@ -13,6 +13,7 @@ type ProgressHeaderProps = {
   targetCount: number | null;
   sessionLabel: string;
   sortLabel: string;
+  newSinceLastScanCount: number;
   isScanning: boolean;
   scanProgressLoaded: number;
   scanProgressTotal: number | null;
@@ -27,6 +28,7 @@ export function ProgressHeader({
   targetCount,
   sessionLabel,
   sortLabel,
+  newSinceLastScanCount,
   isScanning,
   scanProgressLoaded,
   scanProgressTotal,
@@ -47,6 +49,9 @@ export function ProgressHeader({
         {estimatedPhotoCount > 0 ? (
           <Text style={styles.context}>That is roughly room for {estimatedPhotoCount} more average photos.</Text>
         ) : null}
+        {newSinceLastScanCount > 0 ? (
+          <Text style={styles.context}>{newSinceLastScanCount} new photo{newSinceLastScanCount === 1 ? '' : 's'} since the last scan.</Text>
+        ) : null}
         <View style={styles.statRow}>
           <View style={styles.statPill}>
             <Text style={styles.statLabel}>Freed</Text>
@@ -56,10 +61,17 @@ export function ProgressHeader({
             <Text style={styles.statLabel}>Sort</Text>
             <Text style={styles.statValue}>{sortLabel}</Text>
           </View>
-          <View style={styles.statPill}>
-            <Text style={styles.statLabel}>Scanning</Text>
-            <Text style={styles.statValue}>{isScanning ? scanLabel : 'Done'}</Text>
-          </View>
+          {newSinceLastScanCount > 0 ? (
+            <View style={styles.statPill}>
+              <Text style={styles.statLabel}>New</Text>
+              <Text style={styles.statValue}>{newSinceLastScanCount}</Text>
+            </View>
+          ) : (
+            <View style={styles.statPill}>
+              <Text style={styles.statLabel}>Scanning</Text>
+              <Text style={styles.statValue}>{isScanning ? scanLabel : 'Done'}</Text>
+            </View>
+          )}
         </View>
       </View>
     </View>

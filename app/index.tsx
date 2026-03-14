@@ -34,7 +34,7 @@ export default function WelcomeScreen() {
 
     try {
       if (resetProgress && !currentFileId) {
-        requestRescan();
+        requestRescan({ resetSession: true });
       }
 
       beginQuickSession(nextTarget, resetProgress);

@@ -42,8 +42,11 @@ export function useScanBootstrap() {
     }
 
     const state = useAppStore.getState();
+    const needsInitialScan = state.queueOrder.length === 0 && !state.lastCompletedScanAt;
+    const rescanRequested = state.scanMode === 'rescan' && state.scanState === 'idle';
+    const interruptedScan = state.scanState === 'scanning';
 
-    if (state.queueOrder.length > 0 || state.scanState === 'scanning' || scanInFlightRef.current) {
+    if (!(needsInitialScan || rescanRequested || interruptedScan) || scanInFlightRef.current) {
       return;
     }
 

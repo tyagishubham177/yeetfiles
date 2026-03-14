@@ -29,6 +29,10 @@ export type FileItem = {
   modifiedAt: string | null;
   bucketType: BucketType;
   sortKey: string;
+  scanFingerprint: string;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  isNewSinceLastScan: boolean;
   status: FileStatus;
   lastActionAt: string | null;
   lastErrorCode?: string;

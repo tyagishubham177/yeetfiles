@@ -11,7 +11,7 @@ import { nowIso } from '../lib/time';
 import { asyncStorage } from '../persistence/async-storage';
 import { APP_STORAGE_KEY } from '../persistence/storage-adapter';
 import type { ActionLog, AnalyticsEvent, ReviewAction } from '../types/action-log';
-import type { MilestoneEvent, MoveTarget, PersistedAppState, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
+import type { MilestoneEvent, MoveTarget, PersistedAppState, RescanSummary, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
 import type {
   BucketType,
   FilterChip,
@@ -50,7 +50,7 @@ type AppStore = PersistedAppState & {
   commitDeleteSuccess: (fileId: string, bytesDelta: number) => void;
   recordDeleteFailure: (fileId: string, errorCode: string, message: string) => void;
   recordPreviewOpen: (fileId: string) => void;
-  requestRescan: () => void;
+  requestRescan: (options?: { resetSession?: boolean }) => void;
   toggleSetting: (key: keyof SettingsState) => void;
   resetOnboarding: () => void;
   commitMoveSuccess: (fileId: string, target: MoveTarget) => void;
@@ -82,9 +82,14 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
   analyticsEvents: [],
   lastCompletedScanAt: null,
   scanState: 'idle',
+  scanMode: 'initial',
   scanProgressLoaded: 0,
   scanProgressTotal: null,
+  currentScanNewFileCount: 0,
+  currentScanMatchedFileCount: 0,
+  currentScanProtectedReviewedCount: 0,
   scanError: null,
+  lastRescanSummary: null,
   sessionId: null,
   sessionStats: createEmptySessionStats(),
   sessionSummary: null,
@@ -120,6 +125,30 @@ function getSessionModeForTarget(targetCount: QuickSessionTarget): SessionMode {
 
 function isActionableStatus(status: FileStatus): boolean {
   return status === 'pending' || status === 'skipped';
+}
+
+function mergeScannedFile(existing: FileItem, incoming: FileItem, seenAt: string): FileItem {
+  return {
+    ...existing,
+    nativeAssetId: incoming.nativeAssetId,
+    albumId: incoming.albumId ?? existing.albumId ?? null,
+    albumTitle: incoming.albumTitle ?? existing.albumTitle ?? null,
+    uri: incoming.uri,
+    previewUri: incoming.previewUri,
+    name: incoming.name,
+    mimeType: incoming.mimeType,
+    sizeBytes: incoming.sizeBytes,
+    width: incoming.width,
+    height: incoming.height,
+    createdAt: incoming.createdAt,
+    modifiedAt: incoming.modifiedAt,
+    bucketType: incoming.bucketType,
+    sortKey: incoming.sortKey,
+    scanFingerprint: incoming.scanFingerprint,
+    firstSeenAt: existing.firstSeenAt ?? seenAt,
+    lastSeenAt: seenAt,
+    isNewSinceLastScan: false,
+  };
 }
 
 function slugifyFolderKey(value: string): string {
@@ -359,6 +388,7 @@ function createUndoEntry(
     fileName: active.name,
     action,
     previousStatus: active.status,
+    previousIsNewSinceLastScan: active.isNewSinceLastScan,
     previousQueueOrder: [...state.queueOrder],
     previousCurrentFileId: state.currentFileId,
     previousSessionStats: { ...state.sessionStats },
@@ -387,6 +417,19 @@ function appendRecentMoveTarget(targets: MoveTarget[], target: MoveTarget): Move
     },
     ...targets.filter((existing) => (existing.albumId ?? existing.albumName) !== targetKey),
   ].slice(0, 5);
+}
+
+function buildRescanSummary(state: PersistedAppState, completedAt: string): RescanSummary | null {
+  if (state.scanMode !== 'rescan') {
+    return null;
+  }
+
+  return {
+    completedAt,
+    newFileCount: state.currentScanNewFileCount,
+    matchedFileCount: state.currentScanMatchedFileCount,
+    protectedReviewedCount: state.currentScanProtectedReviewedCount,
+  };
 }
 
 export const useAppStore = create<AppStore>()(
@@ -434,26 +477,80 @@ export const useAppStore = create<AppStore>()(
           currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, value),
         })),
       beginScan: () =>
-        set({
-          scanState: 'scanning',
-          scanError: null,
-          scanProgressLoaded: 0,
-          scanProgressTotal: null,
+        set((state) => {
+          const nextFiles =
+            state.scanMode === 'rescan'
+              ? Object.fromEntries(
+                  Object.entries(state.filesById).map(([fileId, file]) => [
+                    fileId,
+                    {
+                      ...file,
+                      isNewSinceLastScan: false,
+                    },
+                  ])
+                )
+              : state.filesById;
+
+          return {
+            filesById: nextFiles,
+            scanState: 'scanning' as const,
+            scanError: null,
+            scanProgressLoaded: 0,
+            scanProgressTotal: null,
+            currentScanNewFileCount: 0,
+            currentScanMatchedFileCount: 0,
+            currentScanProtectedReviewedCount: 0,
+          };
         }),
       receiveScanChunk: (items, progress) =>
         set((state) => {
           const nextFiles: Record<string, FileItem> = { ...state.filesById };
           const nextQueueOrder = [...state.queueOrder];
-          const seenAssetIds = new Set(Object.values(nextFiles).map((file) => file.nativeAssetId));
+          const existingByAssetId = new Map<string, string>();
+          const existingByFingerprint = new Map<string, string>();
+          let newFileCount = 0;
+          let matchedFileCount = 0;
+          let protectedReviewedCount = 0;
+          const seenAt = nowIso();
+
+          for (const [fileId, file] of Object.entries(nextFiles)) {
+            existingByAssetId.set(file.nativeAssetId, fileId);
+            existingByFingerprint.set(file.scanFingerprint, fileId);
+          }
 
           for (const item of items) {
-            if (seenAssetIds.has(item.nativeAssetId)) {
+            const existingFileId = existingByAssetId.get(item.nativeAssetId) ?? existingByFingerprint.get(item.scanFingerprint);
+
+            if (existingFileId) {
+              const existing = nextFiles[existingFileId];
+
+              if (!existing) {
+                continue;
+              }
+
+              if (!isActionableStatus(existing.status)) {
+                protectedReviewedCount += 1;
+              }
+
+              nextFiles[existingFileId] = mergeScannedFile(existing, item, seenAt);
+              existingByAssetId.set(item.nativeAssetId, existingFileId);
+              existingByFingerprint.set(item.scanFingerprint, existingFileId);
+              matchedFileCount += 1;
               continue;
             }
 
-            nextFiles[item.id] = item;
-            nextQueueOrder.push(item.id);
-            seenAssetIds.add(item.nativeAssetId);
+            const nextItem: FileItem = {
+              ...item,
+              firstSeenAt: seenAt,
+              lastSeenAt: seenAt,
+              isNewSinceLastScan: state.scanMode === 'rescan' && Boolean(state.lastCompletedScanAt),
+            };
+
+            nextFiles[nextItem.id] = nextItem;
+            nextQueueOrder.push(nextItem.id);
+            existingByAssetId.set(nextItem.nativeAssetId, nextItem.id);
+            existingByFingerprint.set(nextItem.scanFingerprint, nextItem.id);
+            newFileCount += 1;
           }
 
           return {
@@ -463,14 +560,22 @@ export const useAppStore = create<AppStore>()(
             scanState: 'scanning' as const,
             scanProgressLoaded: progress.loaded,
             scanProgressTotal: progress.total,
+            currentScanNewFileCount: state.currentScanNewFileCount + newFileCount,
+            currentScanMatchedFileCount: state.currentScanMatchedFileCount + matchedFileCount,
+            currentScanProtectedReviewedCount: state.currentScanProtectedReviewedCount + protectedReviewedCount,
           };
         }),
       completeScan: () =>
-        set((state) => ({
-          scanState: 'ready',
-          lastCompletedScanAt: nowIso(),
-          currentFileId: state.currentFileId ?? resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
-        })),
+        set((state) => {
+          const completedAt = nowIso();
+
+          return {
+            scanState: 'ready' as const,
+            lastCompletedScanAt: completedAt,
+            lastRescanSummary: buildRescanSummary(state, completedAt) ?? state.lastRescanSummary,
+            currentFileId: state.currentFileId ?? resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
+          };
+        }),
       failScan: (message) =>
         set({
           scanState: 'error',
@@ -490,6 +595,7 @@ export const useAppStore = create<AppStore>()(
           const updatedFile: FileItem = {
             ...active,
             status: 'kept',
+            isNewSinceLastScan: false,
             lastActionAt: nowIso(),
           };
           const nextFiles: Record<string, FileItem> = {
@@ -533,6 +639,7 @@ export const useAppStore = create<AppStore>()(
           const updatedFile: FileItem = {
             ...active,
             status: 'skipped',
+            isNewSinceLastScan: false,
             lastActionAt: nowIso(),
           };
           const nextFiles: Record<string, FileItem> = {
@@ -583,6 +690,7 @@ export const useAppStore = create<AppStore>()(
           const restoredFile: FileItem = {
             ...active,
             status: undoEntry.previousStatus,
+            isNewSinceLastScan: undoEntry.previousIsNewSinceLastScan,
             lastActionAt: nowIso(),
             lastErrorCode: undefined,
           };
@@ -621,6 +729,7 @@ export const useAppStore = create<AppStore>()(
           const updatedFile: FileItem = {
             ...active,
             status: 'deleted',
+            isNewSinceLastScan: false,
             lastActionAt: nowIso(),
             lastErrorCode: undefined,
           };
@@ -662,6 +771,7 @@ export const useAppStore = create<AppStore>()(
             status: 'moved',
             albumId: target.albumId ?? active.albumId ?? null,
             albumTitle: target.albumName,
+            isNewSinceLastScan: false,
             lastActionAt: nowIso(),
             lastErrorCode: undefined,
           };
@@ -736,21 +846,23 @@ export const useAppStore = create<AppStore>()(
         set((state) => ({
           actionLogs: appendActionLogIfEnabled(state, 'open', fileId, 'success'),
         })),
-      requestRescan: () =>
+      requestRescan: ({ resetSession = false } = {}) =>
         set((state) => ({
-          filesById: {},
-          queueOrder: [],
-          currentFileId: null,
+          currentFileId: state.currentFileId ?? resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
           scanState: 'idle',
+          scanMode: 'rescan' as const,
           scanError: null,
           scanProgressLoaded: 0,
           scanProgressTotal: null,
-          sessionSummary: null,
-          sessionStats: createEmptySessionStats(),
-          sessionId: createId('session'),
-          undoEntries: [],
-          activeMilestone: null,
-          activeFilter: 'all',
+          currentScanNewFileCount: 0,
+          currentScanMatchedFileCount: 0,
+          currentScanProtectedReviewedCount: 0,
+          sessionSummary: resetSession ? null : state.sessionSummary,
+          sessionStats: resetSession ? createEmptySessionStats() : state.sessionStats,
+          sessionId: resetSession ? createId('session') : state.sessionId,
+          undoEntries: resetSession ? [] : pruneExpiredUndoEntries(state.undoEntries),
+          activeMilestone: resetSession ? null : state.activeMilestone,
+          activeFilter: resetSession ? 'all' : state.activeFilter,
           scanNonce: state.scanNonce + 1,
         })),
       toggleSetting: (key) =>
@@ -815,9 +927,14 @@ export const useAppStore = create<AppStore>()(
         analyticsEvents: state.analyticsEvents,
         lastCompletedScanAt: state.lastCompletedScanAt,
         scanState: state.scanState,
+        scanMode: state.scanMode,
         scanProgressLoaded: state.scanProgressLoaded,
         scanProgressTotal: state.scanProgressTotal,
+        currentScanNewFileCount: state.currentScanNewFileCount,
+        currentScanMatchedFileCount: state.currentScanMatchedFileCount,
+        currentScanProtectedReviewedCount: state.currentScanProtectedReviewedCount,
         scanError: state.scanError,
+        lastRescanSummary: state.lastRescanSummary,
         sessionId: state.sessionId,
         sessionStats: state.sessionStats,
         sessionSummary: state.sessionSummary,
@@ -855,6 +972,13 @@ export function selectPendingQueueCount(state: AppStore): number {
 
 export function selectVisibleQueueCount(state: AppStore): number {
   return getVisibleQueueIds(state).length;
+}
+
+export function selectNewSinceLastScanCount(state: AppStore): number {
+  return state.queueOrder.reduce((count, fileId) => {
+    const file = state.filesById[fileId];
+    return file && isActionableStatus(file.status) && file.isNewSinceLastScan ? count + 1 : count;
+  }, 0);
 }
 
 export function selectFilterCounts(state: AppStore): Record<string, number> {

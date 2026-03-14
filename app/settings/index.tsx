@@ -7,7 +7,8 @@ import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { exportDebugSnapshot } from '../../src/features/diagnostics/export-service';
-import { useAppStore } from '../../src/store/app-store';
+import { formatDateTime } from '../../src/lib/format';
+import { selectNewSinceLastScanCount, useAppStore } from '../../src/store/app-store';
 import type { PersistedAppState } from '../../src/types/app-state';
 
 function SettingRow({
@@ -35,6 +36,11 @@ export default function SettingsScreen() {
   const actionLogs = useAppStore((state) => state.actionLogs);
   const analyticsEvents = useAppStore((state) => state.analyticsEvents);
   const recentMoveTargets = useAppStore((state) => state.recentMoveTargets);
+  const scanState = useAppStore((state) => state.scanState);
+  const scanMode = useAppStore((state) => state.scanMode);
+  const lastCompletedScanAt = useAppStore((state) => state.lastCompletedScanAt);
+  const lastRescanSummary = useAppStore((state) => state.lastRescanSummary);
+  const newSinceLastScanCount = useAppStore(selectNewSinceLastScanCount);
   const toggleSetting = useAppStore((state) => state.toggleSetting);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const resetOnboarding = useAppStore((state) => state.resetOnboarding);
@@ -114,7 +120,22 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Session and data</Text>
-          <Button label="Re-scan photos" onPress={() => { requestRescan(); router.replace(ROUTES.queue); }} />
+          <Button
+            label={scanState === 'scanning' && scanMode === 'rescan' ? 'Re-scanning photos...' : 'Re-scan photos'}
+            onPress={() => {
+              requestRescan();
+              router.replace(ROUTES.queue);
+            }}
+            disabled={scanState === 'scanning' && scanMode === 'rescan'}
+          />
+          <Text style={styles.sectionHint}>
+            Re-scan checks the library again, adds only unmatched photos, and keeps already reviewed items from re-entering as duplicates.
+          </Text>
+          {lastRescanSummary ? (
+            <Text style={styles.sectionHint}>
+              Last re-scan: {lastRescanSummary.newFileCount} new, {lastRescanSummary.matchedFileCount} matched, {lastRescanSummary.protectedReviewedCount} reviewed protected.
+            </Text>
+          ) : null}
           <Button
             label="Reset onboarding"
             variant="secondary"
@@ -135,9 +156,11 @@ export default function SettingsScreen() {
           />
           <Text style={styles.diagnosticLine}>{Object.keys(filesById).length} files cached in the current local snapshot</Text>
           <Text style={styles.diagnosticLine}>{queueOrder.length} queue positions tracked locally</Text>
+          <Text style={styles.diagnosticLine}>{newSinceLastScanCount} photos currently marked new since last scan</Text>
           <Text style={styles.diagnosticLine}>{analyticsEvents.length} analytics events stored locally</Text>
           <Text style={styles.diagnosticLine}>{actionLogs.length} action log entries stored locally</Text>
           <Text style={styles.diagnosticLine}>{recentMoveTargets.length} recent move destinations stored locally</Text>
+          <Text style={styles.diagnosticLine}>Last completed scan: {formatDateTime(lastCompletedScanAt)}</Text>
         </View>
 
         <View style={[styles.section, styles.dangerSection]}>

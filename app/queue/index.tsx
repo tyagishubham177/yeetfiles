@@ -25,13 +25,14 @@ import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
-import { formatBytes, formatCompactDate } from '../../src/lib/format';
+import { formatBytes, formatCompactDate, formatDateTime } from '../../src/lib/format';
 import {
   getActiveFilterLabel,
   getQuickSessionLabel,
   getSortLabel,
   selectCurrentFile,
   selectFilterChips,
+  selectNewSinceLastScanCount,
   selectNextStackItems,
   selectPendingQueueCount,
   selectTopUndoEntry,
@@ -53,15 +54,19 @@ export default function QueueScreen() {
   const sessionStats = useAppStore((state) => state.sessionStats);
   const sessionSummary = useAppStore((state) => state.sessionSummary);
   const scanState = useAppStore((state) => state.scanState);
+  const scanMode = useAppStore((state) => state.scanMode);
   const scanProgressLoaded = useAppStore((state) => state.scanProgressLoaded);
   const scanProgressTotal = useAppStore((state) => state.scanProgressTotal);
+  const currentScanNewFileCount = useAppStore((state) => state.currentScanNewFileCount);
   const scanError = useAppStore((state) => state.scanError);
+  const lastRescanSummary = useAppStore((state) => state.lastRescanSummary);
   const targetCount = useAppStore((state) => state.targetCount);
   const activeFilter = useAppStore((state) => state.activeFilter);
   const sortMode = useAppStore((state) => state.sortMode);
   const activeMilestone = useAppStore((state) => state.activeMilestone);
   const pendingQueueCount = useAppStore(selectPendingQueueCount);
   const visibleQueueCount = useAppStore(selectVisibleQueueCount);
+  const newSinceLastScanCount = useAppStore(selectNewSinceLastScanCount);
   const filterChips = useAppStore(useShallow(selectFilterChips));
   const topUndoEntry = useAppStore(selectTopUndoEntry);
   const undoEntries = useAppStore((state) => state.undoEntries);
@@ -128,6 +133,12 @@ export default function QueueScreen() {
   const sortLabel = getSortLabel(sortMode);
   const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
   const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
+  const rescanStatusLabel =
+    scanMode === 'rescan' && scanState === 'scanning'
+      ? currentScanNewFileCount > 0
+        ? `${currentScanNewFileCount} new found so far`
+        : 'Checking for new photos'
+      : null;
 
   useEffect(() => {
     if (!topUndoEntry) {
@@ -310,6 +321,7 @@ export default function QueueScreen() {
           targetCount={targetCount}
           sessionLabel={sessionLabel}
           sortLabel={sortLabel}
+          newSinceLastScanCount={newSinceLastScanCount}
           isScanning={scanState === 'scanning'}
           scanProgressLoaded={scanProgressLoaded}
           scanProgressTotal={scanProgressTotal}
@@ -343,11 +355,31 @@ export default function QueueScreen() {
             <View style={styles.scanRow}>
               <Text style={styles.scanText}>
                 {scanState === 'scanning'
-                  ? `Scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
-                  : 'Queue is live'}
+                  ? scanMode === 'rescan'
+                    ? `Re-scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
+                    : `Scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
+                  : newSinceLastScanCount > 0
+                    ? `${newSinceLastScanCount} new since last scan`
+                    : 'Queue is live'}
               </Text>
               {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
             </View>
+            {rescanStatusLabel ? (
+              <View style={styles.rescanInfoCard}>
+                <Text style={styles.rescanInfoTitle}>{rescanStatusLabel}</Text>
+                <Text style={styles.rescanInfoBody}>Known photos stay matched to their earlier review state while this pass runs.</Text>
+              </View>
+            ) : null}
+            {!rescanStatusLabel && lastRescanSummary ? (
+              <View style={styles.rescanInfoCard}>
+                <Text style={styles.rescanInfoTitle}>
+                  Last re-scan added {lastRescanSummary.newFileCount} new photo{lastRescanSummary.newFileCount === 1 ? '' : 's'}
+                </Text>
+                <Text style={styles.rescanInfoBody}>
+                  {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} stayed protected. {formatDateTime(lastRescanSummary.completedAt)}
+                </Text>
+              </View>
+            ) : null}
             {secondaryFeedback ? (
               <View style={[styles.secondaryFeedbackCard, secondaryFeedback.tone === 'error' && styles.secondaryFeedbackCardError]}>
                 <Text style={styles.secondaryFeedbackText}>{secondaryFeedback.message}</Text>
@@ -386,10 +418,12 @@ export default function QueueScreen() {
         ) : scanState === 'scanning' ? (
           <View style={styles.emptyWrap}>
             <View style={styles.scanLoadingCard}>
-              <Text style={styles.scanLoadingEyebrow}>Scan in progress</Text>
+              <Text style={styles.scanLoadingEyebrow}>{scanMode === 'rescan' ? 'Re-scan in progress' : 'Scan in progress'}</Text>
               <Text style={styles.scanLoadingTitle}>{scanProgressLabel}</Text>
               <Text style={styles.scanLoadingBody}>
-                We are building your queue now. As soon as the first photo is ready, it will replace this panel.
+                {scanMode === 'rescan'
+                  ? 'We are checking the library again and only adding photos we have not already matched.'
+                  : 'We are building your queue now. As soon as the first photo is ready, it will replace this panel.'}
               </Text>
               <View style={styles.scanProgressTrack}>
                 <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%` }]} />
@@ -539,6 +573,26 @@ const styles = StyleSheet.create({
     color: '#FFC2B4',
     fontFamily: typography.medium,
     fontSize: 13,
+  },
+  rescanInfoCard: {
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(243,180,63,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(243,180,63,0.28)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: 4,
+  },
+  rescanInfoTitle: {
+    color: colors.white,
+    fontFamily: typography.bold,
+    fontSize: 14,
+  },
+  rescanInfoBody: {
+    color: 'rgba(249,250,251,0.8)',
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 20,
   },
   secondaryFeedbackCard: {
     borderRadius: radius.md,

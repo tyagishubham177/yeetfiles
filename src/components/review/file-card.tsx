@@ -168,6 +168,11 @@ function FileCardComponent({
                 <Text style={styles.hintRight}>Keep</Text>
               </View>
             ) : null}
+            {current.isNewSinceLastScan ? (
+              <View style={styles.newBadge}>
+                <Text style={styles.newBadgeLabel}>New since last scan</Text>
+              </View>
+            ) : null}
             <View style={styles.metaStrip}>
               <View style={styles.metaTextWrap}>
                 <Text style={styles.fileName} numberOfLines={1}>
@@ -278,6 +283,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
+  },
+  newBadge: {
+    position: 'absolute',
+    top: 56,
+    left: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(243,180,63,0.9)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  newBadgeLabel: {
+    color: '#101418',
+    fontFamily: typography.bold,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   metaStrip: {
     position: 'absolute',

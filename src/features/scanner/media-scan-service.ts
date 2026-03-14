@@ -4,7 +4,7 @@ import * as MediaLibrary from 'expo-media-library';
 import type { FileItem } from '../../types/file-item';
 import { classifyFileBucket } from './bucket-classifier';
 
-export const MEDIA_SCAN_PAGE_SIZE = 60;
+export const MEDIA_SCAN_PAGE_SIZE = 100;
 
 type ScanChunkMeta = {
   loaded: number;
@@ -43,9 +43,15 @@ function getSizeBytes(uri: string): number {
   }
 }
 
+function buildScanFingerprint(asset: MediaLibrary.Asset, sizeBytes: number): string {
+  const modifiedAt = asset.modificationTime ?? asset.creationTime ?? 0;
+  return [asset.uri, modifiedAt, sizeBytes, asset.filename].join('::');
+}
+
 function normalizeAsset(asset: MediaLibrary.Asset, albumTitle: string | null): FileItem {
   const createdAt = asset.creationTime ? new Date(asset.creationTime).toISOString() : null;
   const modifiedAt = asset.modificationTime ? new Date(asset.modificationTime).toISOString() : createdAt;
+  const sizeBytes = getSizeBytes(asset.uri);
 
   return {
     id: `file-${asset.id}`,
@@ -56,13 +62,17 @@ function normalizeAsset(asset: MediaLibrary.Asset, albumTitle: string | null): F
     previewUri: asset.uri,
     name: asset.filename,
     mimeType: inferMimeType(asset.filename),
-    sizeBytes: getSizeBytes(asset.uri),
+    sizeBytes,
     width: asset.width,
     height: asset.height,
     createdAt,
     modifiedAt,
     bucketType: classifyFileBucket({ filename: asset.filename, uri: asset.uri, albumTitle }),
     sortKey: `${asset.creationTime ?? 0}-${asset.id}`,
+    scanFingerprint: buildScanFingerprint(asset, sizeBytes),
+    firstSeenAt: null,
+    lastSeenAt: null,
+    isNewSinceLastScan: false,
     status: 'pending',
     lastActionAt: null,
   };
