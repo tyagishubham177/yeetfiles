@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the minimal persisted shapes needed for the first versions of FileSwipe so the queue, reward loop, and resume behavior stay consistent without overbuilding the storage layer.
+This document defines the persisted shapes needed to keep FileSwipe trustworthy as scans, resumes, reminders, and queue review all evolve together.
 
 ## Model design goals
 
@@ -10,8 +10,8 @@ This document defines the minimal persisted shapes needed for the first versions
 - keep resume after restart straightforward
 - make action history auditable
 - keep status transitions explicit
-- support lightweight re-scan matching later
-- track emotional progress metrics such as storage freed without inventing extra entities too early
+- support additive re-scan without duplicating reviewed work
+- track quality-of-life state such as reminders, storage warnings, and theme choices without inventing extra entities too early
 
 ## Core persisted shapes
 
@@ -35,7 +35,10 @@ Suggested fields:
 - `status`: `pending | kept | deleted | skipped | error`
 - `lastActionAt`: timestamp of most recent action
 - `lastErrorCode`: optional recent failure code
-- `isNewSinceLastScan`: optional flag for later re-scan surfacing
+- `scanFingerprint`: lightweight persisted matching key for re-scan fallback
+- `firstSeenAt`: timestamp when the file first entered the app queue
+- `lastSeenAt`: timestamp when the file was last confirmed during a scan
+- `isNewSinceLastScan`: flag used to surface brand-new items after additive re-scan
 
 ## `ActionLog`
 
@@ -67,9 +70,18 @@ Suggested fields:
 - `currentFileId`: active file id
 - `queueOrder`: array of file ids in stable order
 - `activeFilter`: `all | screenshots | camera | downloads`
-- `sortMode`: `oldest_first | newest_first | largest_first | random`
+- `sortMode`: `oldest_first | newest_first | largest_first | random | smart`
 - `lastCompletedScanAt`: timestamp or null
-- `isScanning`: boolean
+- `notificationPermissionState`: normalized notification permission state
+- `scanState`: `idle | scanning | paused | failed`
+- `scanMode`: `initial | rescan`
+- `currentScanNewFileCount`: count of files added during the active scan
+- `currentScanMatchedFileCount`: count of previously known files matched during the active scan
+- `currentScanProtectedReviewedCount`: count of reviewed files protected from duplicate re-entry
+- `lastRescanSummary`: optional persisted summary of the most recent additive re-scan
+- `lowStorageWarning`: optional latest low-storage snapshot shown to the user
+- `lastStorageCheckAt`: timestamp of the last device storage check
+- `lastLowStorageNotificationAt`: timestamp of the last low-storage alert sent
 - `undoBuffer`: array of recent reversible action ids, max length 3
 - `sessionStats`: nested summary state
 - `settings`: nested preference state
@@ -99,8 +111,12 @@ Suggested fields:
 - `hapticsEnabled`
 - `animationsEnabled`
 - `followSystemTheme`
+- `nightModePreference`
 - `showGestureHints`
+- `hasSeenGestureTutorial`
 - `hasCompletedOnboarding`
+- `weeklySummaryNotificationsEnabled`
+- `storageAlertsEnabled`
 - `debugLoggingEnabled`
 
 ## Deferred entities
@@ -152,6 +168,7 @@ Match in this priority order when possible:
 Goal:
 
 - reviewed items should not re-enter as brand-new items unless they are meaningfully different or the source mapping truly changed
+- additive re-scan should explain how many new files were found without wiping the existing queue
 
 ## Derived selectors to support
 
