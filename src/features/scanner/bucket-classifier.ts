@@ -3,10 +3,11 @@ import type { BucketType } from '../../types/file-item';
 type BucketCandidate = {
   filename: string;
   uri: string;
+  albumTitle?: string | null;
 };
 
-export function classifyFileBucket({ filename, uri }: BucketCandidate): BucketType {
-  const haystack = `${filename} ${uri}`.toLowerCase();
+export function classifyFileBucket({ filename, uri, albumTitle }: BucketCandidate): BucketType {
+  const haystack = `${filename} ${uri} ${albumTitle ?? ''}`.toLowerCase();
 
   if (
     haystack.includes('screenshot') ||
@@ -21,7 +22,13 @@ export function classifyFileBucket({ filename, uri }: BucketCandidate): BucketTy
     return 'downloads';
   }
 
-  if (/^(img_|pxl_|mvimg_|dsc_|camera)/.test(filename.toLowerCase())) {
+  if (
+    /^(img_|pxl_|mvimg_|dsc_|camera)/.test(filename.toLowerCase()) ||
+    haystack.includes('/dcim') ||
+    haystack.includes('\\dcim') ||
+    haystack.includes('/camera') ||
+    haystack.includes('\\camera')
+  ) {
     return 'camera';
   }
 

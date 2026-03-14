@@ -43,13 +43,15 @@ function getSizeBytes(uri: string): number {
   }
 }
 
-function normalizeAsset(asset: MediaLibrary.Asset): FileItem {
+function normalizeAsset(asset: MediaLibrary.Asset, albumTitle: string | null): FileItem {
   const createdAt = asset.creationTime ? new Date(asset.creationTime).toISOString() : null;
   const modifiedAt = asset.modificationTime ? new Date(asset.modificationTime).toISOString() : createdAt;
 
   return {
     id: `file-${asset.id}`,
     nativeAssetId: asset.id,
+    albumId: asset.albumId ?? null,
+    albumTitle,
     uri: asset.uri,
     previewUri: asset.uri,
     name: asset.filename,
@@ -59,7 +61,7 @@ function normalizeAsset(asset: MediaLibrary.Asset): FileItem {
     height: asset.height,
     createdAt,
     modifiedAt,
-    bucketType: classifyFileBucket({ filename: asset.filename, uri: asset.uri }),
+    bucketType: classifyFileBucket({ filename: asset.filename, uri: asset.uri, albumTitle }),
     sortKey: `${asset.creationTime ?? 0}-${asset.id}`,
     status: 'pending',
     lastActionAt: null,
@@ -67,6 +69,8 @@ function normalizeAsset(asset: MediaLibrary.Asset): FileItem {
 }
 
 export async function scanPhotoLibrary({ pageSize = MEDIA_SCAN_PAGE_SIZE, onChunk }: ScanArgs): Promise<void> {
+  const albums = await MediaLibrary.getAlbumsAsync();
+  const albumTitleById = new Map(albums.map((album) => [album.id, album.title]));
   let cursor: string | undefined;
   let loaded = 0;
   let hasNextPage = true;
@@ -79,7 +83,7 @@ export async function scanPhotoLibrary({ pageSize = MEDIA_SCAN_PAGE_SIZE, onChun
       sortBy: [[MediaLibrary.SortBy.creationTime, true]],
     });
 
-    const items = page.assets.map(normalizeAsset);
+    const items = page.assets.map((asset) => normalizeAsset(asset, asset.albumId ? albumTitleById.get(asset.albumId) ?? null : null));
     loaded += items.length;
     hasNextPage = page.hasNextPage;
     cursor = page.endCursor ?? undefined;

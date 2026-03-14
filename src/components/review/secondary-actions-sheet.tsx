@@ -25,7 +25,7 @@ export function SecondaryActionsSheet({ visible, fileName, onClose, onMove, onSh
           <Text style={styles.contextValue}>{fileName}</Text>
         </View>
       ) : null}
-      <Button label="Move photo" onPress={onMove} variant="secondary" />
+      <Button label="Move to album" onPress={onMove} variant="secondary" />
       <Button label="Share photo" onPress={onShare} variant="secondary" />
       <Pressable accessibilityRole="button" onPress={onClose} style={styles.closeLinkWrap}>
         <Text style={styles.closeLink}>Back to queue</Text>

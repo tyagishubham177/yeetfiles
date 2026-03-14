@@ -25,8 +25,11 @@ export type SessionSummary = {
 };
 
 export type MoveTarget = {
-  uri: string;
+  albumId?: string | null;
+  albumName: string;
   label: string;
+  assetCount?: number;
+  isNew?: boolean;
   lastUsedAt?: string;
 };
 

@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 type ZoomablePreviewImageProps = {
   uri: string;
+  height?: number;
 };
 
 const MIN_SCALE = 1;
@@ -13,11 +14,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
+export function ZoomablePreviewImage({ uri, height = 420 }: ZoomablePreviewImageProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
   const scaleRef = useRef(1);
+  const pinchStartScaleRef = useRef(1);
   const offsetRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -31,8 +33,12 @@ export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
   const pinchGesture = useMemo(
     () =>
       Gesture.Pinch()
+        .runOnJS(true)
+        .onBegin(() => {
+          pinchStartScaleRef.current = scaleRef.current;
+        })
         .onUpdate((event) => {
-          const nextScale = clamp(scaleRef.current * event.scale, MIN_SCALE, MAX_SCALE);
+          const nextScale = clamp(pinchStartScaleRef.current * event.scale, MIN_SCALE, MAX_SCALE);
           scale.setValue(nextScale);
         })
         .onEnd(() => {
@@ -62,6 +68,7 @@ export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
+        .runOnJS(true)
         .minDistance(2)
         .onUpdate((event) => {
           if (scaleRef.current <= 1.01) {
@@ -92,6 +99,7 @@ export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
         <Animated.View
           style={[
             styles.imageWrap,
+            { height },
             {
               transform: [{ translateX }, { translateY }, { scale }],
             },
@@ -107,14 +115,12 @@ export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
 const styles = StyleSheet.create({
   wrap: {
     width: '100%',
-    minHeight: 420,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   imageWrap: {
     width: '100%',
-    height: 420,
     alignItems: 'center',
     justifyContent: 'center',
   },

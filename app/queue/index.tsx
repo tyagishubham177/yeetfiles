@@ -21,17 +21,17 @@ import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
-import { pickMoveTarget } from '../../src/features/file-ops/move-service';
+import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatCompactDate } from '../../src/lib/format';
 import {
-  getFilterLabel,
+  getActiveFilterLabel,
   getQuickSessionLabel,
   getSortLabel,
   selectCurrentFile,
-  selectFilterCounts,
+  selectFilterChips,
   selectNextStackItems,
   selectPendingQueueCount,
   selectTopUndoEntry,
@@ -62,7 +62,7 @@ export default function QueueScreen() {
   const activeMilestone = useAppStore((state) => state.activeMilestone);
   const pendingQueueCount = useAppStore(selectPendingQueueCount);
   const visibleQueueCount = useAppStore(selectVisibleQueueCount);
-  const filterCounts = useAppStore(useShallow(selectFilterCounts));
+  const filterChips = useAppStore(useShallow(selectFilterChips));
   const topUndoEntry = useAppStore(selectTopUndoEntry);
   const undoEntries = useAppStore((state) => state.undoEntries);
   const setPermissionState = useAppStore((state) => state.setPermissionState);
@@ -82,6 +82,9 @@ export default function QueueScreen() {
   const [secondaryActionsOpen, setSecondaryActionsOpen] = useState(false);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
   const [selectedMoveTarget, setSelectedMoveTarget] = useState<MoveTarget | null>(null);
+  const [availableMoveTargets, setAvailableMoveTargets] = useState<MoveTarget[]>([]);
+  const [pendingAlbumName, setPendingAlbumName] = useState('');
+  const [loadingMoveTargets, setLoadingMoveTargets] = useState(false);
   const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
   const [secondaryFeedback, setSecondaryFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
 
@@ -124,6 +127,7 @@ export default function QueueScreen() {
   const sessionLabel = getQuickSessionLabel((targetCount as 10 | 25 | 50 | null) ?? 10);
   const sortLabel = getSortLabel(sortMode);
   const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
+  const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
 
   useEffect(() => {
     if (!topUndoEntry) {
@@ -228,18 +232,16 @@ export default function QueueScreen() {
     setSecondaryActionsOpen(true);
   };
 
-  const chooseMoveFolder = async () => {
+  const loadMoveTargets = async () => {
+    setLoadingMoveTargets(true);
+
     try {
-      const nextTarget = await pickMoveTarget();
-
-      if (!nextTarget) {
-        return;
-      }
-
-      setSelectedMoveTarget(nextTarget);
-      setMoveErrorMessage(null);
+      const targets = await getMoveTargets();
+      setAvailableMoveTargets(targets);
     } catch {
-      setMoveErrorMessage('We could not open the folder picker. Try again.');
+      setMoveErrorMessage('We could not load the media-library albums. Try again.');
+    } finally {
+      setLoadingMoveTargets(false);
     }
   };
 
@@ -264,6 +266,7 @@ export default function QueueScreen() {
     setMoveSheetOpen(false);
     setSecondaryActionsOpen(false);
     setSelectedMoveTarget(result.target);
+    setPendingAlbumName('');
     setSecondaryFeedback({
       tone: 'success',
       message: `Moved to ${result.target.label}`,
@@ -273,7 +276,9 @@ export default function QueueScreen() {
   const openMoveFlow = () => {
     setSecondaryActionsOpen(false);
     setMoveErrorMessage(null);
+    setPendingAlbumName('');
     setMoveSheetOpen(true);
+    void loadMoveTargets();
   };
 
   const handleUndo = () => {
@@ -310,7 +315,7 @@ export default function QueueScreen() {
           scanProgressTotal={scanProgressTotal}
         />
 
-        <FilterChipRow activeFilter={activeFilter} counts={filterCounts} onSelect={(filter) => setActiveFilter(filter)} />
+        <FilterChipRow activeFilter={activeFilter} chips={filterChips} onSelect={(filter) => setActiveFilter(filter)} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
           {SORT_OPTIONS.map((option) => {
             const selected = option === sortMode;
@@ -372,7 +377,7 @@ export default function QueueScreen() {
         ) : filterEmpty ? (
           <View style={styles.emptyWrap}>
             <EmptyState
-              title={`No ${getFilterLabel(activeFilter).toLowerCase()} cards left`}
+              title={`No ${activeFilterLabel.toLowerCase()} cards left`}
               body="Try another filter or switch back to all photos to keep the session moving."
               actionLabel="Show all photos"
               onAction={() => setActiveFilter('all' as FilterType)}
@@ -444,12 +449,16 @@ export default function QueueScreen() {
         visible={moveSheetOpen}
         selectedTarget={selectedMoveTarget}
         recentTargets={recentMoveTargets}
+        availableTargets={availableMoveTargets}
+        pendingAlbumName={pendingAlbumName}
+        isLoadingTargets={loadingMoveTargets}
         isMoving={isMoving}
         errorMessage={moveErrorMessage}
         onClose={() => setMoveSheetOpen(false)}
-        onPickTarget={() => void chooseMoveFolder()}
-        onSelectRecentTarget={(target) => {
+        onPendingAlbumNameChange={setPendingAlbumName}
+        onSelectTarget={(target) => {
           setSelectedMoveTarget(target);
+          setPendingAlbumName(target.isNew ? target.albumName : '');
           setMoveErrorMessage(null);
         }}
         onConfirmMove={() => void confirmMove()}

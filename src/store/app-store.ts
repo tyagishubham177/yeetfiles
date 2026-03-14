@@ -14,9 +14,11 @@ import type { ActionLog, AnalyticsEvent, ReviewAction } from '../types/action-lo
 import type { MilestoneEvent, MoveTarget, PersistedAppState, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
 import type {
   BucketType,
+  FilterChip,
   FileItem,
   FileStatus,
   FilterType,
+  FolderFilterType,
   PermissionState,
   QuickSessionTarget,
   SessionMode,
@@ -27,8 +29,6 @@ type ScanProgress = {
   loaded: number;
   total: number | null;
 };
-
-type FilterCounts = Record<FilterType, number>;
 
 type AppStore = PersistedAppState & {
   hasHydrated: boolean;
@@ -53,7 +53,7 @@ type AppStore = PersistedAppState & {
   requestRescan: () => void;
   toggleSetting: (key: keyof SettingsState) => void;
   resetOnboarding: () => void;
-  commitMoveSuccess: (fileId: string, nextUri: string, target: MoveTarget, nextName?: string) => void;
+  commitMoveSuccess: (fileId: string, target: MoveTarget) => void;
   recordMoveFailure: (fileId: string, errorCode: string, message: string) => void;
   resetApp: () => Promise<void>;
   dismissSummary: () => void;
@@ -96,8 +96,11 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
 
 const UNDO_WINDOW_MS = 5000;
 const UNDO_BUFFER_LIMIT = 10;
-const FILTER_ORDER: FilterType[] = ['all', 'screenshots', 'camera', 'downloads', 'other'];
 const MILESTONE_COUNTS = [5, 25, 50, 100];
+const BASE_FILTER_ORDER: FilterType[] = ['all', 'screenshots', 'camera', 'downloads'];
+let cachedFilterChipQueueOrder: string[] | null = null;
+let cachedFilterChipFilesById: Record<string, FileItem> | null = null;
+let cachedFilterChips: FilterChip[] = [];
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -119,8 +122,45 @@ function isActionableStatus(status: FileStatus): boolean {
   return status === 'pending' || status === 'skipped';
 }
 
+function slugifyFolderKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getFolderFilterId(file: Pick<FileItem, 'albumId' | 'albumTitle'>): FolderFilterType | null {
+  if (file.albumId) {
+    return `folder:${file.albumId}`;
+  }
+
+  if (!file.albumTitle) {
+    return null;
+  }
+
+  const slug = slugifyFolderKey(file.albumTitle);
+  return slug ? (`folder:title:${slug}` as FolderFilterType) : null;
+}
+
+function isFolderFilter(filter: FilterType): filter is FolderFilterType {
+  return filter.startsWith('folder:');
+}
+
 function matchesFilter(file: FileItem, activeFilter: FilterType): boolean {
-  return activeFilter === 'all' ? true : file.bucketType === activeFilter;
+  if (activeFilter === 'all') {
+    return true;
+  }
+
+  if (isFolderFilter(activeFilter)) {
+    return file.bucketType === 'other' && getFolderFilterId(file) === activeFilter;
+  }
+
+  if (activeFilter === 'other') {
+    return file.bucketType === 'other' && !file.albumTitle;
+  }
+
+  return file.bucketType === activeFilter;
 }
 
 function parseDateValue(value: string | null): number {
@@ -338,12 +378,14 @@ function appendUndoEntry(entries: UndoEntry[], entry: UndoEntry): UndoEntry[] {
 }
 
 function appendRecentMoveTarget(targets: MoveTarget[], target: MoveTarget): MoveTarget[] {
+  const targetKey = target.albumId ?? target.albumName;
+
   return [
     {
       ...target,
       lastUsedAt: nowIso(),
     },
-    ...targets.filter((existing) => existing.uri !== target.uri),
+    ...targets.filter((existing) => (existing.albumId ?? existing.albumName) !== targetKey),
   ].slice(0, 5);
 }
 
@@ -608,7 +650,7 @@ export const useAppStore = create<AppStore>()(
             actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'success', bytesDelta),
           };
         }),
-      commitMoveSuccess: (fileId, nextUri, target, nextName) =>
+      commitMoveSuccess: (fileId, target) =>
         set((state) => {
           const active = state.filesById[fileId];
           if (!active) {
@@ -618,10 +660,8 @@ export const useAppStore = create<AppStore>()(
           const updatedFile: FileItem = {
             ...active,
             status: 'moved',
-            name: nextName ?? active.name,
-            uri: nextUri,
-            previewUri: nextUri,
-            nativeAssetId: '',
+            albumId: target.albumId ?? active.albumId ?? null,
+            albumTitle: target.albumName,
             lastActionAt: nowIso(),
             lastErrorCode: undefined,
           };
@@ -817,23 +857,11 @@ export function selectVisibleQueueCount(state: AppStore): number {
   return getVisibleQueueIds(state).length;
 }
 
-export function selectFilterCounts(state: AppStore): FilterCounts {
-  return FILTER_ORDER.reduce<FilterCounts>(
-    (counts, filterKey) => {
-      counts[filterKey] = state.queueOrder.reduce((count, fileId) => {
-        const file = state.filesById[fileId];
-        return file && isActionableStatus(file.status) && matchesFilter(file, filterKey) ? count + 1 : count;
-      }, 0);
-      return counts;
-    },
-    {
-      all: 0,
-      screenshots: 0,
-      camera: 0,
-      downloads: 0,
-      other: 0,
-    }
-  );
+export function selectFilterCounts(state: AppStore): Record<string, number> {
+  return selectFilterChips(state).reduce<Record<string, number>>((counts, chip) => {
+    counts[chip.id] = chip.count;
+    return counts;
+  }, {});
 }
 
 export function selectTopUndoEntry(state: AppStore): UndoEntry | null {
@@ -845,8 +873,12 @@ export function selectResumeAvailable(state: AppStore): boolean {
 }
 
 export function getFilterLabel(filter: FilterType): string {
+  if (isFolderFilter(filter)) {
+    return 'Folder';
+  }
+
   if (filter === 'all') {
-    return 'All';
+    return 'All images';
   }
 
   if (filter === 'camera') {
@@ -862,6 +894,101 @@ export function getFilterLabel(filter: FilterType): string {
   }
 
   return 'Screenshots';
+}
+
+export function selectFilterChips(state: AppStore): FilterChip[] {
+  if (cachedFilterChipQueueOrder === state.queueOrder && cachedFilterChipFilesById === state.filesById) {
+    return cachedFilterChips;
+  }
+
+  const baseCounts: Record<'all' | BucketType, number> = {
+    all: 0,
+    screenshots: 0,
+    camera: 0,
+    downloads: 0,
+    other: 0,
+  };
+  const folderCounts = new Map<FolderFilterType, { label: string; count: number }>();
+
+  for (const fileId of state.queueOrder) {
+    const file = state.filesById[fileId];
+    if (!file || !isActionableStatus(file.status)) {
+      continue;
+    }
+
+    baseCounts.all += 1;
+
+    if (file.bucketType === 'screenshots' || file.bucketType === 'camera' || file.bucketType === 'downloads') {
+      baseCounts[file.bucketType] += 1;
+      continue;
+    }
+
+    const folderFilterId = getFolderFilterId(file);
+    if (!folderFilterId || !file.albumTitle) {
+      baseCounts.other += 1;
+      continue;
+    }
+
+    const existing = folderCounts.get(folderFilterId);
+    folderCounts.set(folderFilterId, {
+      label: file.albumTitle,
+      count: (existing?.count ?? 0) + 1,
+    });
+  }
+
+  const chips: FilterChip[] = BASE_FILTER_ORDER.map((filterId) => {
+    const count =
+      filterId === 'all'
+        ? baseCounts.all
+        : filterId === 'screenshots'
+          ? baseCounts.screenshots
+          : filterId === 'camera'
+            ? baseCounts.camera
+            : baseCounts.downloads;
+
+    return {
+      id: filterId,
+      label: getFilterLabel(filterId),
+      count,
+    };
+  });
+
+  const folderChips: FilterChip[] = [...folderCounts.entries()]
+    .sort((left, right) => left[1].label.localeCompare(right[1].label))
+    .map(([id, value]) => ({
+      id,
+      label: value.label,
+      count: value.count,
+    }));
+
+  if (baseCounts.other > 0) {
+    folderChips.push({
+      id: 'other',
+      label: getFilterLabel('other'),
+      count: baseCounts.other,
+    });
+  }
+
+  cachedFilterChipQueueOrder = state.queueOrder;
+  cachedFilterChipFilesById = state.filesById;
+  cachedFilterChips = [...chips, ...folderChips];
+
+  return cachedFilterChips;
+}
+
+export function getActiveFilterLabel(state: Pick<AppStore, 'activeFilter' | 'filesById' | 'queueOrder'>): string {
+  if (!isFolderFilter(state.activeFilter)) {
+    return getFilterLabel(state.activeFilter);
+  }
+
+  for (const fileId of state.queueOrder) {
+    const file = state.filesById[fileId];
+    if (file && getFolderFilterId(file) === state.activeFilter && file.albumTitle) {
+      return file.albumTitle;
+    }
+  }
+
+  return 'Folder';
 }
 
 export function getSortLabel(sortMode: SortMode): string {
