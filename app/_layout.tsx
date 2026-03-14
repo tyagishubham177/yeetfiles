@@ -7,7 +7,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorView } from '../src/components/feedback/error-view';
-import { colors, typography } from '../src/constants/ui-tokens';
+import { typography } from '../src/constants/ui-tokens';
+import { useAppHealthMonitor } from '../src/hooks/use-app-health-monitor';
+import { useNotificationSync } from '../src/hooks/use-notification-sync';
+import { useAppTheme } from '../src/lib/theme';
 import { useAppStore } from '../src/store/app-store';
 
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
@@ -16,6 +19,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 
 export default function RootLayout() {
   const hasHydrated = useAppStore((state) => state.hasHydrated);
+  const { colors } = useAppTheme();
   const [fontsLoaded] = useFonts({
     DMSans_400Regular,
     DMSans_500Medium,
@@ -24,11 +28,14 @@ export default function RootLayout() {
     SpaceGrotesk_700Bold,
   });
 
+  useNotificationSync();
+  useAppHealthMonitor();
+
   if (!fontsLoaded || !hasHydrated) {
     return (
-      <View style={styles.bootWrap}>
-        <Text style={styles.bootTitle}>FileSwipe</Text>
-        <Text style={styles.bootBody}>Restoring your local queue...</Text>
+      <View style={[styles.bootWrap, { backgroundColor: colors.canvas }]}>
+        <Text style={[styles.bootTitle, { color: colors.ink }]}>FileSwipe</Text>
+        <Text style={[styles.bootBody, { color: colors.mutedInk }]}>Restoring your local queue...</Text>
       </View>
     );
   }
@@ -48,18 +55,15 @@ const styles = StyleSheet.create({
   },
   bootWrap: {
     flex: 1,
-    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   bootTitle: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 34,
   },
   bootBody: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 16,
   },

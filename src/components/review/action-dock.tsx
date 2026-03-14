@@ -1,6 +1,7 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { spacing, typography } from '../../constants/ui-tokens';
+import { useAppTheme } from '../../lib/theme';
 import { Button } from '../ui/button';
 
 type ActionDockProps = {
@@ -13,6 +14,8 @@ type ActionDockProps = {
 };
 
 export function ActionDock({ onKeep, onDelete, onSkip, onUndo, undoCount = 0, disabled = false }: ActionDockProps) {
+  const { colors, isNightMode } = useAppTheme();
+
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
@@ -20,13 +23,17 @@ export function ActionDock({ onKeep, onDelete, onSkip, onUndo, undoCount = 0, di
         <Button label="Keep" onPress={onKeep} disabled={disabled} style={styles.grow} />
       </View>
       <View style={styles.secondaryRow}>
-        <Text accessibilityRole="button" onPress={disabled ? undefined : onSkip} style={[styles.skip, disabled && styles.skipDisabled]}>
-          Skip for now
-        </Text>
-        {onUndo && undoCount > 0 ? (
-          <Text accessibilityRole="button" onPress={disabled ? undefined : onUndo} style={[styles.undo, disabled && styles.skipDisabled]}>
-            Undo ({undoCount})
+        <Pressable accessibilityRole="button" accessibilityLabel="Skip this photo for later" disabled={disabled} onPress={onSkip}>
+          <Text style={[styles.skip, { color: isNightMode ? 'rgba(245,247,250,0.78)' : 'rgba(249,250,251,0.86)' }, disabled && styles.skipDisabled]}>
+            Skip for now
           </Text>
+        </Pressable>
+        {onUndo && undoCount > 0 ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Undo one of the last ${undoCount} safe actions`} disabled={disabled} onPress={onUndo}>
+            <Text style={[styles.undo, { color: colors.highlight }, disabled && styles.skipDisabled]}>
+              Undo ({undoCount})
+            </Text>
+          </Pressable>
         ) : null}
       </View>
     </View>
@@ -52,13 +59,11 @@ const styles = StyleSheet.create({
   skip: {
     fontFamily: typography.medium,
     fontSize: 15,
-    color: 'rgba(249,250,251,0.86)',
     paddingVertical: spacing.xs,
   },
   undo: {
     fontFamily: typography.bold,
     fontSize: 15,
-    color: '#F3B43F',
     paddingVertical: spacing.xs,
   },
   skipDisabled: {

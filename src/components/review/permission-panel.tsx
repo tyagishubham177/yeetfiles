@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
+import { radius, spacing, typography } from '../../constants/ui-tokens';
+import { useAppTheme } from '../../lib/theme';
 import { Button } from '../ui/button';
 
 type PermissionPanelProps = {
@@ -10,14 +11,16 @@ type PermissionPanelProps = {
 };
 
 export function PermissionPanel({ blocked, onRetry, onOpenSettings }: PermissionPanelProps) {
+  const { colors, isNightMode } = useAppTheme();
+
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.title}>Photos permission is needed</Text>
-      <Text style={styles.body}>
+    <View style={[styles.wrap, { backgroundColor: colors.cardGlass, borderColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.09)' }]}>
+      <Text style={[styles.title, { color: colors.white }]}>Photos permission is needed</Text>
+      <Text style={[styles.body, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' }]}>
         FileSwipe stays local and only reviews your photos on-device. Without access, we cannot build the queue.
       </Text>
       {blocked ? (
-        <Text style={styles.note}>
+        <Text style={[styles.note, { color: isNightMode ? '#F2C3B8' : '#FFD7C7' }]}>
           If this is Expo Go on Android, that environment now blocks full media-library access. Use a development build for the real photo flow.
         </Text>
       ) : null}
@@ -35,23 +38,18 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
     borderRadius: radius.lg,
-    backgroundColor: colors.cardGlass,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
   },
   title: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 28,
   },
   body: {
-    color: 'rgba(249,250,251,0.82)',
     fontFamily: typography.body,
     fontSize: 16,
     lineHeight: 24,
   },
   note: {
-    color: '#FFD7C7',
     fontFamily: typography.medium,
     fontSize: 14,
     lineHeight: 22,

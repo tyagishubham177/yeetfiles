@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
@@ -9,6 +9,7 @@ import { ActionDock } from '../../src/components/review/action-dock';
 import { EmptyState } from '../../src/components/review/empty-state';
 import { FileCard } from '../../src/components/review/file-card';
 import { FilterChipRow } from '../../src/components/review/filter-chip-row';
+import { GestureTutorialCard } from '../../src/components/review/gesture-tutorial-card';
 import { MilestoneBanner } from '../../src/components/review/milestone-banner';
 import { MoveDestinationSheet } from '../../src/components/review/move-destination-sheet';
 import { PhotoPreviewModal } from '../../src/components/review/photo-preview-modal';
@@ -26,6 +27,7 @@ import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../.
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatCompactDate, formatDateTime } from '../../src/lib/format';
+import { useAppTheme } from '../../src/lib/theme';
 import {
   getActiveFilterLabel,
   getQuickSessionLabel,
@@ -42,15 +44,17 @@ import {
 import type { MoveTarget } from '../../src/types/app-state';
 import type { FilterType, SortMode } from '../../src/types/file-item';
 
-const SORT_OPTIONS: SortMode[] = ['oldest_first', 'newest_first', 'largest_first', 'random'];
+const SORT_OPTIONS: SortMode[] = ['smart', 'oldest_first', 'newest_first', 'largest_first', 'random'];
 
 export default function QueueScreen() {
   const router = useRouter();
   useScanBootstrap();
+  const { colors, isNightMode } = useAppTheme();
 
   const currentFile = useAppStore(selectCurrentFile);
   const nextItems = useAppStore(useShallow(selectNextStackItems));
   const permissionState = useAppStore((state) => state.permissionState);
+  const lowStorageWarning = useAppStore((state) => state.lowStorageWarning);
   const sessionStats = useAppStore((state) => state.sessionStats);
   const sessionSummary = useAppStore((state) => state.sessionSummary);
   const scanState = useAppStore((state) => state.scanState);
@@ -80,6 +84,7 @@ export default function QueueScreen() {
   const recordPreviewOpen = useAppStore((state) => state.recordPreviewOpen);
   const recentMoveTargets = useAppStore((state) => state.recentMoveTargets);
   const settings = useAppStore((state) => state.settings);
+  const markGestureTutorialSeen = useAppStore((state) => state.markGestureTutorialSeen);
   const { keepCurrent, skipCurrent, deleteCurrent, moveCurrent, isDeleting, isMoving } = useReviewActions();
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -133,6 +138,7 @@ export default function QueueScreen() {
   const sortLabel = getSortLabel(sortMode);
   const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
   const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
+  const showTutorialCard = Boolean(currentFile && !settings.hasSeenGestureTutorial && sessionStats.reviewedCount === 0);
   const rescanStatusLabel =
     scanMode === 'rescan' && scanState === 'scanning'
       ? currentScanNewFileCount > 0
@@ -175,6 +181,14 @@ export default function QueueScreen() {
 
     return () => clearTimeout(timeoutId);
   }, [secondaryFeedback]);
+
+  useEffect(() => {
+    const uris = [currentFile?.previewUri, ...nextItems.map((item) => item.previewUri)].filter(Boolean) as string[];
+
+    uris.forEach((uri) => {
+      void Image.prefetch(uri).catch(() => null);
+    });
+  }, [currentFile?.previewUri, nextItems]);
 
   const retryPermission = async () => {
     const nextPermissionState = await requestMediaPermissionState();
@@ -300,15 +314,15 @@ export default function QueueScreen() {
   const busy = isDeleting || isMoving;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.stage }]} edges={['top', 'bottom']}>
       <StatusBar style="light" />
-      <View style={styles.backgroundGlowA} />
-      <View style={styles.backgroundGlowB} />
+      <View style={[styles.backgroundGlowA, { backgroundColor: colors.stageGlow }]} />
+      <View style={[styles.backgroundGlowB, { backgroundColor: isNightMode ? 'rgba(217,162,59,0.05)' : 'rgba(243,180,63,0.1)' }]} />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
-          <Text style={styles.queueTitle}>Queue</Text>
+          <Text style={[styles.queueTitle, { color: colors.white }]}>Queue</Text>
           <Pressable android_disableSound={!settings.soundEnabled} onPress={() => router.push(ROUTES.settings)}>
-            <Text style={styles.settingsLink}>Settings</Text>
+            <Text style={[styles.settingsLink, { color: isNightMode ? 'rgba(245,247,250,0.78)' : 'rgba(249,250,251,0.84)' }]}>Settings</Text>
           </Pressable>
         </View>
 
@@ -338,22 +352,44 @@ export default function QueueScreen() {
                 accessibilityRole="button"
                 android_disableSound={!settings.soundEnabled}
                 onPress={() => setSortMode(option)}
-                style={[styles.sortChip, selected && styles.sortChipSelected]}
+                style={[
+                  styles.sortChip,
+                  { backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.06)' },
+                  selected && { backgroundColor: isNightMode ? 'rgba(76,151,232,0.2)' : 'rgba(60,145,230,0.28)' },
+                ]}
               >
-                <Text style={[styles.sortChipLabel, selected && styles.sortChipLabelSelected]}>{getSortLabel(option)}</Text>
+                <Text style={[styles.sortChipLabel, { color: selected ? colors.white : isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
+                  {getSortLabel(option)}
+                </Text>
               </Pressable>
             );
           })}
         </ScrollView>
 
         {activeMilestone ? <MilestoneBanner milestone={activeMilestone} /> : null}
+        {lowStorageWarning ? (
+          <View
+            style={[
+              styles.rescanInfoCard,
+              {
+                backgroundColor: isNightMode ? 'rgba(221,115,89,0.12)' : 'rgba(231,111,81,0.14)',
+                borderColor: isNightMode ? 'rgba(221,115,89,0.18)' : 'rgba(231,111,81,0.22)',
+              },
+            ]}
+          >
+            <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>Storage is getting tight</Text>
+            <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+              About {formatBytes(lowStorageWarning.freeBytes)} free right now. This is a good time for a short cleanup pass.
+            </Text>
+          </View>
+        ) : null}
 
         {permissionMissing ? (
           <PermissionPanel blocked={blocked} onRetry={() => void retryPermission()} onOpenSettings={() => void Linking.openSettings()} />
         ) : currentFile ? (
           <>
             <View style={styles.scanRow}>
-              <Text style={styles.scanText}>
+              <Text style={[styles.scanText, { color: isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
                 {scanState === 'scanning'
                   ? scanMode === 'rescan'
                     ? `Re-scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
@@ -362,49 +398,86 @@ export default function QueueScreen() {
                     ? `${newSinceLastScanCount} new since last scan`
                     : 'Queue is live'}
               </Text>
-              {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
+              {scanError ? <Text style={[styles.scanError, { color: isNightMode ? '#F2C3B8' : '#FFC2B4' }]}>{scanError}</Text> : null}
             </View>
             {rescanStatusLabel ? (
-              <View style={styles.rescanInfoCard}>
-                <Text style={styles.rescanInfoTitle}>{rescanStatusLabel}</Text>
-                <Text style={styles.rescanInfoBody}>Known photos stay matched to their earlier review state while this pass runs.</Text>
+              <View
+                style={[
+                  styles.rescanInfoCard,
+                  {
+                    backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
+                    borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
+                  },
+                ]}
+              >
+                <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>{rescanStatusLabel}</Text>
+                <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+                  Known photos stay matched to their earlier review state while this pass runs.
+                </Text>
               </View>
             ) : null}
             {!rescanStatusLabel && lastRescanSummary ? (
-              <View style={styles.rescanInfoCard}>
-                <Text style={styles.rescanInfoTitle}>
+              <View
+                style={[
+                  styles.rescanInfoCard,
+                  {
+                    backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
+                    borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
+                  },
+                ]}
+              >
+                <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
                   Last re-scan added {lastRescanSummary.newFileCount} new photo{lastRescanSummary.newFileCount === 1 ? '' : 's'}
                 </Text>
-                <Text style={styles.rescanInfoBody}>
+                <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
                   {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} stayed protected. {formatDateTime(lastRescanSummary.completedAt)}
                 </Text>
               </View>
             ) : null}
             {secondaryFeedback ? (
-              <View style={[styles.secondaryFeedbackCard, secondaryFeedback.tone === 'error' && styles.secondaryFeedbackCardError]}>
-                <Text style={styles.secondaryFeedbackText}>{secondaryFeedback.message}</Text>
+              <View
+                style={[
+                  styles.secondaryFeedbackCard,
+                  secondaryFeedback.tone === 'error'
+                    ? {
+                        backgroundColor: isNightMode ? 'rgba(221,115,89,0.12)' : 'rgba(231,111,81,0.16)',
+                        borderColor: isNightMode ? 'rgba(221,115,89,0.18)' : 'rgba(231,111,81,0.3)',
+                      }
+                    : {
+                        backgroundColor: isNightMode ? 'rgba(42,185,119,0.12)' : 'rgba(46,194,126,0.16)',
+                        borderColor: isNightMode ? 'rgba(42,185,119,0.18)' : 'rgba(46,194,126,0.3)',
+                      },
+                ]}
+              >
+                <Text style={[styles.secondaryFeedbackText, { color: colors.white }]}>{secondaryFeedback.message}</Text>
               </View>
             ) : null}
             <View style={styles.cardWrap}>
-              <FileCard
-                current={currentFile}
-                nextItems={nextItems}
-                disabled={busy}
-                showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
-                onPress={openPreview}
-                onKeepGesture={keepCurrent}
-                onDeleteGesture={() => setDeleteSheetOpen(true)}
-                onOpenSecondaryActions={openSecondaryActions}
-              />
+              {showTutorialCard ? (
+                <GestureTutorialCard onContinue={markGestureTutorialSeen} />
+              ) : (
+                <FileCard
+                  current={currentFile}
+                  nextItems={nextItems}
+                  disabled={busy}
+                  showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
+                  onPress={openPreview}
+                  onKeepGesture={keepCurrent}
+                  onDeleteGesture={() => setDeleteSheetOpen(true)}
+                  onOpenSecondaryActions={openSecondaryActions}
+                />
+              )}
             </View>
-            <ActionDock
-              onDelete={() => setDeleteSheetOpen(true)}
-              onKeep={keepCurrent}
-              onSkip={skipCurrent}
-              onUndo={topUndoEntry ? handleUndo : undefined}
-              undoCount={undoEntries.length}
-              disabled={busy}
-            />
+            {showTutorialCard ? null : (
+              <ActionDock
+                onDelete={() => setDeleteSheetOpen(true)}
+                onKeep={keepCurrent}
+                onSkip={skipCurrent}
+                onUndo={topUndoEntry ? handleUndo : undefined}
+                undoCount={undoEntries.length}
+                disabled={busy}
+              />
+            )}
           </>
         ) : filterEmpty ? (
           <View style={styles.emptyWrap}>
@@ -417,18 +490,28 @@ export default function QueueScreen() {
           </View>
         ) : scanState === 'scanning' ? (
           <View style={styles.emptyWrap}>
-            <View style={styles.scanLoadingCard}>
-              <Text style={styles.scanLoadingEyebrow}>{scanMode === 'rescan' ? 'Re-scan in progress' : 'Scan in progress'}</Text>
-              <Text style={styles.scanLoadingTitle}>{scanProgressLabel}</Text>
-              <Text style={styles.scanLoadingBody}>
+            <View
+              style={[
+                styles.scanLoadingCard,
+                {
+                  backgroundColor: colors.cardGlass,
+                  borderColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.09)',
+                },
+              ]}
+            >
+              <Text style={[styles.scanLoadingEyebrow, { color: isNightMode ? 'rgba(245,247,250,0.66)' : 'rgba(249,250,251,0.7)' }]}>
+                {scanMode === 'rescan' ? 'Re-scan in progress' : 'Scan in progress'}
+              </Text>
+              <Text style={[styles.scanLoadingTitle, { color: colors.white }]}>{scanProgressLabel}</Text>
+              <Text style={[styles.scanLoadingBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' }]}>
                 {scanMode === 'rescan'
                   ? 'We are checking the library again and only adding photos we have not already matched.'
                   : 'We are building your queue now. As soon as the first photo is ready, it will replace this panel.'}
               </Text>
-              <View style={styles.scanProgressTrack}>
-                <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%` }]} />
+              <View style={[styles.scanProgressTrack, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.08)' }]}>
+                <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%`, backgroundColor: colors.highlight }]} />
               </View>
-              <Text style={styles.scanLoadingHint}>
+              <Text style={[styles.scanLoadingHint, { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' }]}>
                 {scanProgressTotal ? `${Math.round(scanProgressRatio * 100)}% complete` : 'This can take longer on larger libraries.'}
               </Text>
               <View style={styles.scanLoadingActions}>
@@ -450,14 +533,14 @@ export default function QueueScreen() {
       ) : null}
 
       <Sheet visible={deleteSheetOpen} onClose={() => setDeleteSheetOpen(false)}>
-        <Text style={styles.sheetTitle}>Delete this photo permanently?</Text>
-        <Text style={styles.sheetBody}>
+        <Text style={[styles.sheetTitle, { color: colors.ink }]}>Delete this photo permanently?</Text>
+        <Text style={[styles.sheetBody, { color: colors.mutedInk }]}>
           This action only runs after you confirm it. Your storage-freed score updates only if the delete actually succeeds.
         </Text>
         {currentFile ? (
-          <View style={styles.sheetContext}>
-            <Text style={styles.sheetContextTitle}>{currentFile.name}</Text>
-            <Text style={styles.sheetContextBody}>
+          <View style={[styles.sheetContext, { backgroundColor: colors.surfaceMuted }]}>
+            <Text style={[styles.sheetContextTitle, { color: colors.ink }]}>{currentFile.name}</Text>
+            <Text style={[styles.sheetContextBody, { color: colors.mutedInk }]}>
               {formatCompactDate(currentFile.createdAt)} / {formatBytes(currentFile.sizeBytes)}
             </Text>
           </View>
@@ -517,7 +600,6 @@ export default function QueueScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.stage,
   },
   backgroundGlowA: {
     position: 'absolute',
@@ -526,7 +608,6 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: colors.stageGlow,
   },
   backgroundGlowB: {
     position: 'absolute',
@@ -549,12 +630,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   queueTitle: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 34,
   },
   settingsLink: {
-    color: 'rgba(249,250,251,0.84)',
     fontFamily: typography.medium,
     fontSize: 15,
   },
@@ -565,49 +644,36 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   scanText: {
-    color: 'rgba(249,250,251,0.78)',
     fontFamily: typography.body,
     fontSize: 14,
   },
   scanError: {
-    color: '#FFC2B4',
     fontFamily: typography.medium,
     fontSize: 13,
   },
   rescanInfoCard: {
     borderRadius: radius.md,
-    backgroundColor: 'rgba(243,180,63,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(243,180,63,0.28)',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     gap: 4,
   },
   rescanInfoTitle: {
-    color: colors.white,
     fontFamily: typography.bold,
     fontSize: 14,
   },
   rescanInfoBody: {
-    color: 'rgba(249,250,251,0.8)',
     fontFamily: typography.body,
     fontSize: 13,
     lineHeight: 20,
   },
   secondaryFeedbackCard: {
     borderRadius: radius.md,
-    backgroundColor: 'rgba(46,194,126,0.16)',
     borderWidth: 1,
-    borderColor: 'rgba(46,194,126,0.3)',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  secondaryFeedbackCardError: {
-    backgroundColor: 'rgba(231,111,81,0.16)',
-    borderColor: 'rgba(231,111,81,0.3)',
-  },
   secondaryFeedbackText: {
-    color: colors.white,
     fontFamily: typography.medium,
     fontSize: 14,
     lineHeight: 21,
@@ -623,27 +689,22 @@ const styles = StyleSheet.create({
   },
   scanLoadingCard: {
     borderRadius: radius.lg,
-    backgroundColor: colors.cardGlass,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
     padding: spacing.xl,
     gap: spacing.md,
   },
   scanLoadingEyebrow: {
-    color: 'rgba(249,250,251,0.7)',
     fontFamily: typography.medium,
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   scanLoadingTitle: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 30,
     lineHeight: 36,
   },
   scanLoadingBody: {
-    color: 'rgba(249,250,251,0.82)',
     fontFamily: typography.body,
     fontSize: 16,
     lineHeight: 24,
@@ -652,15 +713,12 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: radius.pill,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   scanProgressFill: {
     height: '100%',
     borderRadius: radius.pill,
-    backgroundColor: '#F3B43F',
   },
   scanLoadingHint: {
-    color: 'rgba(249,250,251,0.7)',
     fontFamily: typography.medium,
     fontSize: 13,
   },
@@ -675,47 +733,34 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  sortChipSelected: {
-    backgroundColor: 'rgba(60,145,230,0.28)',
   },
   sortChipLabel: {
-    color: 'rgba(249,250,251,0.78)',
     fontFamily: typography.medium,
     fontSize: 13,
-  },
-  sortChipLabelSelected: {
-    color: colors.white,
   },
   undoToastWrap: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
   sheetTitle: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 28,
   },
   sheetBody: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 16,
     lineHeight: 24,
   },
   sheetContext: {
-    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
     padding: spacing.md,
     gap: 4,
   },
   sheetContextTitle: {
-    color: colors.ink,
     fontFamily: typography.bold,
     fontSize: 15,
   },
   sheetContextBody: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 14,
   },

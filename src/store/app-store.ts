@@ -11,7 +11,18 @@ import { nowIso } from '../lib/time';
 import { asyncStorage } from '../persistence/async-storage';
 import { APP_STORAGE_KEY } from '../persistence/storage-adapter';
 import type { ActionLog, AnalyticsEvent, ReviewAction } from '../types/action-log';
-import type { MilestoneEvent, MoveTarget, PersistedAppState, RescanSummary, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
+import type {
+  LowStorageWarning,
+  MilestoneEvent,
+  MoveTarget,
+  NightModePreference,
+  NotificationPermissionState,
+  PersistedAppState,
+  RescanSummary,
+  SessionStats,
+  SettingsState,
+  UndoEntry,
+} from '../types/app-state';
 import type {
   BucketType,
   FilterChip,
@@ -30,14 +41,20 @@ type ScanProgress = {
   total: number | null;
 };
 
+type BooleanSettingKey = {
+  [Key in keyof SettingsState]: SettingsState[Key] extends boolean ? Key : never;
+}[keyof SettingsState];
+
 type AppStore = PersistedAppState & {
   hasHydrated: boolean;
   scanNonce: number;
   setHasHydrated: (value: boolean) => void;
   setPermissionState: (value: PermissionState) => void;
+  setNotificationPermissionState: (value: NotificationPermissionState) => void;
   beginQuickSession: (targetCount?: QuickSessionTarget, resetProgress?: boolean) => void;
   setActiveFilter: (value: FilterType) => void;
   setSortMode: (value: SortMode) => void;
+  setNightModePreference: (value: NightModePreference) => void;
   beginScan: () => void;
   receiveScanChunk: (items: FileItem[], progress: ScanProgress) => void;
   completeScan: () => void;
@@ -51,7 +68,10 @@ type AppStore = PersistedAppState & {
   recordDeleteFailure: (fileId: string, errorCode: string, message: string) => void;
   recordPreviewOpen: (fileId: string) => void;
   requestRescan: (options?: { resetSession?: boolean }) => void;
-  toggleSetting: (key: keyof SettingsState) => void;
+  toggleSetting: (key: BooleanSettingKey) => void;
+  markGestureTutorialSeen: () => void;
+  setStorageWarning: (warning: LowStorageWarning | null) => void;
+  recordLowStorageNotificationSent: () => void;
   resetOnboarding: () => void;
   commitMoveSuccess: (fileId: string, target: MoveTarget) => void;
   recordMoveFailure: (fileId: string, errorCode: string, message: string) => void;
@@ -64,13 +84,18 @@ const INITIAL_SETTINGS: SettingsState = {
   soundEnabled: false,
   animationsEnabled: true,
   followSystemTheme: true,
+  nightModePreference: 'off',
   showGestureHints: true,
   hasCompletedOnboarding: false,
+  hasSeenGestureTutorial: false,
+  weeklySummaryNotificationsEnabled: false,
+  storageAlertsEnabled: false,
   debugLoggingEnabled: true,
 };
 
 const INITIAL_PERSISTED_STATE: PersistedAppState = {
   permissionState: 'unknown',
+  notificationPermissionState: 'unknown',
   sessionMode: 'quick10',
   targetCount: 10,
   activeFilter: 'all',
@@ -90,6 +115,9 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
   currentScanProtectedReviewedCount: 0,
   scanError: null,
   lastRescanSummary: null,
+  lowStorageWarning: null,
+  lastStorageCheckAt: null,
+  lastLowStorageNotificationAt: null,
   sessionId: null,
   sessionStats: createEmptySessionStats(),
   sessionSummary: null,
@@ -106,6 +134,17 @@ const BASE_FILTER_ORDER: FilterType[] = ['all', 'screenshots', 'camera', 'downlo
 let cachedFilterChipQueueOrder: string[] | null = null;
 let cachedFilterChipFilesById: Record<string, FileItem> | null = null;
 let cachedFilterChips: FilterChip[] = [];
+let cachedVisibleQueueOrder: string[] | null = null;
+let cachedVisibleFilesById: Record<string, FileItem> | null = null;
+let cachedVisibleFilter: FilterType | null = null;
+let cachedVisibleSortMode: SortMode | null = null;
+let cachedVisibleQueueIds: string[] = [];
+let cachedPendingQueueOrder: string[] | null = null;
+let cachedPendingFilesById: Record<string, FileItem> | null = null;
+let cachedPendingQueueCount = 0;
+let cachedNewQueueOrder: string[] | null = null;
+let cachedNewFilesById: Record<string, FileItem> | null = null;
+let cachedNewSinceLastScanCount = 0;
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -211,6 +250,38 @@ function randomizeDeterministically(seed: string): number {
   return hash;
 }
 
+function getSmartSortScore(file: FileItem): number {
+  let score = 0;
+
+  if (file.bucketType === 'screenshots') {
+    score += 40;
+  } else if (file.bucketType === 'downloads') {
+    score += 28;
+  } else if (file.bucketType === 'other') {
+    score += 12;
+  }
+
+  if (file.sizeBytes >= 15 * 1024 * 1024) {
+    score += 28;
+  } else if (file.sizeBytes >= 8 * 1024 * 1024) {
+    score += 18;
+  } else if (file.sizeBytes >= 4 * 1024 * 1024) {
+    score += 10;
+  }
+
+  if (file.isNewSinceLastScan) {
+    score -= 8;
+  }
+
+  const dateValue = parseDateValue(file.createdAt);
+  if (dateValue > 0) {
+    const ageInDays = Math.max(Math.floor((Date.now() - dateValue) / (1000 * 60 * 60 * 24)), 0);
+    score += Math.min(ageInDays, 365) / 18;
+  }
+
+  return score;
+}
+
 function compareFiles(left: FileItem, right: FileItem, sortMode: SortMode, queueIndex: Map<string, number>): number {
   if (sortMode === 'largest_first') {
     const sizeDelta = right.sizeBytes - left.sizeBytes;
@@ -240,17 +311,51 @@ function compareFiles(left: FileItem, right: FileItem, sortMode: SortMode, queue
     }
   }
 
+  if (sortMode === 'smart') {
+    const smartDelta = getSmartSortScore(right) - getSmartSortScore(left);
+    if (smartDelta !== 0) {
+      return smartDelta;
+    }
+
+    const sizeDelta = right.sizeBytes - left.sizeBytes;
+    if (sizeDelta !== 0) {
+      return sizeDelta;
+    }
+
+    const dateDelta = parseDateValue(right.createdAt) - parseDateValue(left.createdAt);
+    if (dateDelta !== 0) {
+      return dateDelta;
+    }
+  }
+
   return (queueIndex.get(left.id) ?? 0) - (queueIndex.get(right.id) ?? 0);
 }
 
 function getVisibleQueueIds(state: Pick<PersistedAppState, 'queueOrder' | 'filesById' | 'activeFilter' | 'sortMode'>): string[] {
+  if (
+    cachedVisibleQueueOrder === state.queueOrder &&
+    cachedVisibleFilesById === state.filesById &&
+    cachedVisibleFilter === state.activeFilter &&
+    cachedVisibleSortMode === state.sortMode
+  ) {
+    return cachedVisibleQueueIds;
+  }
+
   const queueIndex = new Map(state.queueOrder.map((fileId, index) => [fileId, index]));
 
-  return state.queueOrder
+  const visibleQueueIds = state.queueOrder
     .map((fileId) => state.filesById[fileId])
     .filter((file): file is FileItem => Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter))
     .sort((left, right) => compareFiles(left, right, state.sortMode, queueIndex))
     .map((file) => file.id);
+
+  cachedVisibleQueueOrder = state.queueOrder;
+  cachedVisibleFilesById = state.filesById;
+  cachedVisibleFilter = state.activeFilter;
+  cachedVisibleSortMode = state.sortMode;
+  cachedVisibleQueueIds = visibleQueueIds;
+
+  return visibleQueueIds;
 }
 
 function resolveCurrentFileId(
@@ -440,6 +545,7 @@ export const useAppStore = create<AppStore>()(
       scanNonce: 0,
       setHasHydrated: (value) => set({ hasHydrated: value }),
       setPermissionState: (value) => set({ permissionState: value }),
+      setNotificationPermissionState: (value) => set({ notificationPermissionState: value }),
       beginQuickSession: (targetCount = 10, resetProgress = true) =>
         set((state) => {
           const resolvedTarget = resetProgress ? targetCount : ((state.targetCount as QuickSessionTarget | null) ?? targetCount);
@@ -475,6 +581,13 @@ export const useAppStore = create<AppStore>()(
         set((state) => ({
           sortMode: value,
           currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, value),
+        })),
+      setNightModePreference: (value) =>
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            nightModePreference: value,
+          },
         })),
       beginScan: () =>
         set((state) => {
@@ -878,11 +991,28 @@ export const useAppStore = create<AppStore>()(
             analyticsEvents: key === 'debugLoggingEnabled' && !nextValue ? [] : state.analyticsEvents,
           };
         }),
+      markGestureTutorialSeen: () =>
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            hasSeenGestureTutorial: true,
+          },
+        })),
+      setStorageWarning: (warning) =>
+        set({
+          lowStorageWarning: warning,
+          lastStorageCheckAt: nowIso(),
+        }),
+      recordLowStorageNotificationSent: () =>
+        set({
+          lastLowStorageNotificationAt: nowIso(),
+        }),
       resetOnboarding: () =>
         set((state) => ({
           settings: {
             ...state.settings,
             hasCompletedOnboarding: false,
+            hasSeenGestureTutorial: false,
           },
         })),
       resetApp: async () => {
@@ -916,6 +1046,7 @@ export const useAppStore = create<AppStore>()(
       },
       partialize: (state) => ({
         permissionState: state.permissionState,
+        notificationPermissionState: state.notificationPermissionState,
         sessionMode: state.sessionMode,
         targetCount: state.targetCount,
         activeFilter: state.activeFilter,
@@ -935,6 +1066,9 @@ export const useAppStore = create<AppStore>()(
         currentScanProtectedReviewedCount: state.currentScanProtectedReviewedCount,
         scanError: state.scanError,
         lastRescanSummary: state.lastRescanSummary,
+        lowStorageWarning: state.lowStorageWarning,
+        lastStorageCheckAt: state.lastStorageCheckAt,
+        lastLowStorageNotificationAt: state.lastLowStorageNotificationAt,
         sessionId: state.sessionId,
         sessionStats: state.sessionStats,
         sessionSummary: state.sessionSummary,
@@ -964,10 +1098,20 @@ export function selectNextStackItems(state: AppStore): FileItem[] {
 }
 
 export function selectPendingQueueCount(state: AppStore): number {
-  return state.queueOrder.reduce((count, fileId) => {
+  if (cachedPendingQueueOrder === state.queueOrder && cachedPendingFilesById === state.filesById) {
+    return cachedPendingQueueCount;
+  }
+
+  const pendingQueueCount = state.queueOrder.reduce((count, fileId) => {
     const file = state.filesById[fileId];
     return file && isActionableStatus(file.status) ? count + 1 : count;
   }, 0);
+
+  cachedPendingQueueOrder = state.queueOrder;
+  cachedPendingFilesById = state.filesById;
+  cachedPendingQueueCount = pendingQueueCount;
+
+  return pendingQueueCount;
 }
 
 export function selectVisibleQueueCount(state: AppStore): number {
@@ -975,10 +1119,20 @@ export function selectVisibleQueueCount(state: AppStore): number {
 }
 
 export function selectNewSinceLastScanCount(state: AppStore): number {
-  return state.queueOrder.reduce((count, fileId) => {
+  if (cachedNewQueueOrder === state.queueOrder && cachedNewFilesById === state.filesById) {
+    return cachedNewSinceLastScanCount;
+  }
+
+  const newSinceLastScanCount = state.queueOrder.reduce((count, fileId) => {
     const file = state.filesById[fileId];
     return file && isActionableStatus(file.status) && file.isNewSinceLastScan ? count + 1 : count;
   }, 0);
+
+  cachedNewQueueOrder = state.queueOrder;
+  cachedNewFilesById = state.filesById;
+  cachedNewSinceLastScanCount = newSinceLastScanCount;
+
+  return newSinceLastScanCount;
 }
 
 export function selectFilterCounts(state: AppStore): Record<string, number> {
@@ -1116,6 +1270,10 @@ export function getActiveFilterLabel(state: Pick<AppStore, 'activeFilter' | 'fil
 }
 
 export function getSortLabel(sortMode: SortMode): string {
+  if (sortMode === 'smart') {
+    return 'Smart';
+  }
+
   if (sortMode === 'newest_first') {
     return 'Newest';
   }

@@ -1,6 +1,9 @@
 import type { ActionLog, AnalyticsEvent } from './action-log';
 import type { FileItem, FileStatus, FilterType, PermissionState, QuickSessionTarget, SessionMode, SortMode } from './file-item';
 
+export type NotificationPermissionState = 'unknown' | 'granted' | 'denied' | 'blocked';
+export type NightModePreference = 'off' | 'on' | 'auto';
+
 export type SessionStats = {
   reviewedCount: number;
   keptCount: number;
@@ -70,16 +73,28 @@ export type SettingsState = {
   soundEnabled: boolean;
   animationsEnabled: boolean;
   followSystemTheme: boolean;
+  nightModePreference: NightModePreference;
   showGestureHints: boolean;
   hasCompletedOnboarding: boolean;
+  hasSeenGestureTutorial: boolean;
+  weeklySummaryNotificationsEnabled: boolean;
+  storageAlertsEnabled: boolean;
   debugLoggingEnabled: boolean;
 };
 
 export type ScanState = 'idle' | 'scanning' | 'ready' | 'error';
 export type ScanMode = 'initial' | 'rescan';
 
+export type LowStorageWarning = {
+  freeBytes: number;
+  totalBytes: number;
+  thresholdBytes: number;
+  detectedAt: string;
+};
+
 export type PersistedAppState = {
   permissionState: PermissionState;
+  notificationPermissionState: NotificationPermissionState;
   sessionMode: SessionMode;
   targetCount: number | null;
   activeFilter: FilterType;
@@ -99,6 +114,9 @@ export type PersistedAppState = {
   currentScanProtectedReviewedCount: number;
   scanError: string | null;
   lastRescanSummary: RescanSummary | null;
+  lowStorageWarning: LowStorageWarning | null;
+  lastStorageCheckAt: string | null;
+  lastLowStorageNotificationAt: string | null;
   sessionId: string | null;
   sessionStats: SessionStats;
   sessionSummary: SessionSummary | null;
