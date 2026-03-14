@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StatusBanner } from '../../src/components/feedback/status-banner';
@@ -9,6 +9,7 @@ import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { exportDebugSnapshot } from '../../src/features/diagnostics/export-service';
+import { canManageMediaAsync, presentManageMediaPermissionPickerAsync, supportsManageMediaAccess } from '../../src/features/file-ops/manage-media-service';
 import { requestNotificationPermissionStateAsync } from '../../src/features/notifications/notification-service';
 import { formatBytes, formatDateTime } from '../../src/lib/format';
 import { useAppTheme } from '../../src/lib/theme';
@@ -96,8 +97,38 @@ export default function SettingsScreen() {
   const resetOnboarding = useAppStore((state) => state.resetOnboarding);
   const resetApp = useAppStore((state) => state.resetApp);
   const [isExporting, setIsExporting] = useState(false);
+  const [isCheckingManageMedia, setIsCheckingManageMedia] = useState(false);
+  const [hasManageMediaAccess, setHasManageMediaAccess] = useState(false);
   const [busyNotificationKey, setBusyNotificationKey] = useState<'weeklySummaryNotificationsEnabled' | 'storageAlertsEnabled' | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!supportsManageMediaAccess()) {
+      return;
+    }
+
+    let active = true;
+
+    const refreshManageMediaState = async () => {
+      const granted = await canManageMediaAsync();
+      if (active) {
+        setHasManageMediaAccess(granted);
+      }
+    };
+
+    void refreshManageMediaState();
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void refreshManageMediaState();
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!statusFeedback) {
@@ -221,6 +252,39 @@ export default function SettingsScreen() {
     setBusyNotificationKey(null);
   };
 
+  const enableDirectDelete = async () => {
+    if (!supportsManageMediaAccess()) {
+      Alert.alert('Android 12+ only', 'Direct delete without the system popup needs Android 12 or newer.');
+      return;
+    }
+
+    setIsCheckingManageMedia(true);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Opening Android media access so YeetFiles can delete without the extra popup...',
+    });
+
+    try {
+      const launched = await presentManageMediaPermissionPickerAsync();
+
+      if (!launched) {
+        setStatusFeedback({
+          tone: 'error',
+          message: 'We could not open the Android media access screen.',
+        });
+        Alert.alert('Open failed', 'We could not open the Android media access screen.');
+        return;
+      }
+
+      setStatusFeedback({
+        tone: 'info',
+        message: 'Grant the Android media access permission, then come back here.',
+      });
+    } finally {
+      setIsCheckingManageMedia(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -307,6 +371,28 @@ export default function SettingsScreen() {
             }}
           />
         </View>
+
+        {supportsManageMediaAccess() ? (
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <Text style={[styles.sectionTitle, { color: colors.ink }]}>Direct delete</Text>
+            <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
+              Android 12+ can grant YeetFiles special media-management access so photo deletes stop showing the extra system confirmation every time.
+            </Text>
+            <Text style={[styles.sectionHint, { color: hasManageMediaAccess ? colors.progress : colors.mutedInk }]}>
+              Status: {hasManageMediaAccess ? 'Direct delete access granted' : 'Still using Android confirmation popup'}
+            </Text>
+            <Button
+              label={hasManageMediaAccess ? 'Review direct delete access' : 'Enable direct delete'}
+              variant="secondary"
+              loading={isCheckingManageMedia}
+              loadingLabel="Opening Android settings..."
+              onPress={() => void enableDirectDelete()}
+            />
+            <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
+              This is Android special access, not the normal photo permission. After granting it once, YeetFiles should be able to delete without the per-photo popup.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Debug and diagnostics</Text>

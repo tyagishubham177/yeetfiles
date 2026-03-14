@@ -227,7 +227,7 @@ export default function QueueScreen() {
 
     setStatusFeedback({
       tone: 'info',
-      message: 'Opening the system delete confirmation...',
+      message: 'Sending the delete request...',
     });
     const result = await deleteCurrent();
 

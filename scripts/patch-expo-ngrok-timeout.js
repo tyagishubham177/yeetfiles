@@ -34,6 +34,34 @@ const cliAsyncNgrokTarget = path.join(
 
 const ngrokClientTarget = path.join(process.cwd(), 'node_modules', '@expo', 'ngrok', 'src', 'client.js');
 const ngrokUtilsTarget = path.join(process.cwd(), 'node_modules', '@expo', 'ngrok', 'src', 'utils.js');
+const mediaLibraryModuleTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'expo-media-library',
+  'android',
+  'src',
+  'main',
+  'java',
+  'expo',
+  'modules',
+  'medialibrary',
+  'MediaLibraryModule.kt'
+);
+const mediaStorePermissionsDelegateTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'expo-media-library',
+  'android',
+  'src',
+  'main',
+  'java',
+  'expo',
+  'modules',
+  'medialibrary',
+  'next',
+  'permissions',
+  'MediaStorePermissionsDelegate.kt'
+);
 
 let changed = false;
 
@@ -79,9 +107,96 @@ changed =
       .replace('  const notReady500 = statusCode === 500 && /panic/.test(body);', '  const notReady500 = statusCode === 500 && typeof body === "string" && /panic/.test(body);')
   ) || changed;
 
+changed =
+  patchFile(mediaLibraryModuleTarget, (source) =>
+    source
+      .replace('import android.provider.MediaStore\n', 'import android.provider.MediaStore\nimport android.provider.Settings\n')
+      .replace(
+        `    AsyncFunction("getPermissionsAsync") { writeOnly: Boolean, permissions: List<GranularPermission>?, promise: Promise ->
+      val granularPermissions = permissions ?: allowedPermissionsList
+      maybeThrowIfExpoGo(granularPermissions)
+      getPermissionsWithPermissionsManager(
+        appContext.permissions,
+        MediaLibraryPermissionPromiseWrapper(granularPermissions, promise, WeakReference(context)),
+        *getManifestPermissions(writeOnly, granularPermissions)
+      )
+    }
+`,
+        `    AsyncFunction("getPermissionsAsync") { writeOnly: Boolean, permissions: List<GranularPermission>?, promise: Promise ->
+      val granularPermissions = permissions ?: allowedPermissionsList
+      maybeThrowIfExpoGo(granularPermissions)
+      getPermissionsWithPermissionsManager(
+        appContext.permissions,
+        MediaLibraryPermissionPromiseWrapper(granularPermissions, promise, WeakReference(context)),
+        *getManifestPermissions(writeOnly, granularPermissions)
+      )
+    }
+
+    AsyncFunction("canManageMediaAsync") {
+      return@AsyncFunction if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        MediaStore.canManageMedia(context)
+      } else {
+        false
+      }
+    }
+
+    AsyncFunction("presentManageMediaPermissionPickerAsync") {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        return@AsyncFunction false
+      }
+
+      val intent = Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(intent)
+      return@AsyncFunction true
+    }
+`
+      )
+      .replace(
+        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      return
+    }
+
+    val uris = MediaLibraryUtils.getAssetsUris(context, assetIds)
+`,
+        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      return
+    }
+
+    if (needsDeletePermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && MediaStore.canManageMedia(context)) {
+      return
+    }
+
+    val uris = MediaLibraryUtils.getAssetsUris(context, assetIds)
+`
+      )
+  ) || changed;
+
+changed =
+  patchFile(mediaStorePermissionsDelegateTarget, (source) =>
+    source
+      .replace('import android.os.Build\n', 'import android.os.Build\nimport android.provider.MediaStore\n')
+      .replace(
+        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      return
+    }
+    val urisWithoutPermission = uris.filterNot { uri ->
+`,
+        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      return
+    }
+    if (needsDeletePermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && MediaStore.canManageMedia(context)) {
+      return
+    }
+    val urisWithoutPermission = uris.filterNot { uri ->
+`
+      )
+  ) || changed;
+
 if (!changed) {
   console.log('Expo ngrok patch already applied.');
   process.exit(0);
 }
 
-console.log('Patched Expo/ngrok tunnel guards.');
+console.log('Patched Expo/ngrok and media-library guards.');
