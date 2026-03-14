@@ -1,4 +1,4 @@
-export type ReviewAction = 'keep' | 'delete' | 'skip' | 'open' | 'rescan' | 'undo';
+export type ReviewAction = 'keep' | 'delete' | 'skip' | 'move' | 'open' | 'rescan' | 'undo';
 export type ActionResult = 'success' | 'failed' | 'cancelled';
 
 export type ActionLog = {

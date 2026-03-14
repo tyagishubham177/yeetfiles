@@ -11,12 +11,14 @@ import { nowIso } from '../lib/time';
 import { asyncStorage } from '../persistence/async-storage';
 import { APP_STORAGE_KEY } from '../persistence/storage-adapter';
 import type { ActionLog, AnalyticsEvent, ReviewAction } from '../types/action-log';
-import type { MilestoneEvent, PersistedAppState, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
+import type { MilestoneEvent, MoveTarget, PersistedAppState, SessionStats, SettingsState, UndoEntry } from '../types/app-state';
 import type {
   BucketType,
+  FilterChip,
   FileItem,
   FileStatus,
   FilterType,
+  FolderFilterType,
   PermissionState,
   QuickSessionTarget,
   SessionMode,
@@ -27,8 +29,6 @@ type ScanProgress = {
   loaded: number;
   total: number | null;
 };
-
-type FilterCounts = Record<FilterType, number>;
 
 type AppStore = PersistedAppState & {
   hasHydrated: boolean;
@@ -52,12 +52,16 @@ type AppStore = PersistedAppState & {
   recordPreviewOpen: (fileId: string) => void;
   requestRescan: () => void;
   toggleSetting: (key: keyof SettingsState) => void;
+  resetOnboarding: () => void;
+  commitMoveSuccess: (fileId: string, target: MoveTarget) => void;
+  recordMoveFailure: (fileId: string, errorCode: string, message: string) => void;
   resetApp: () => Promise<void>;
   dismissSummary: () => void;
 };
 
 const INITIAL_SETTINGS: SettingsState = {
   hapticsEnabled: true,
+  soundEnabled: false,
   animationsEnabled: true,
   followSystemTheme: true,
   showGestureHints: true,
@@ -86,13 +90,17 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
   sessionSummary: null,
   undoEntries: [],
   activeMilestone: null,
+  recentMoveTargets: [],
   settings: INITIAL_SETTINGS,
 };
 
 const UNDO_WINDOW_MS = 5000;
 const UNDO_BUFFER_LIMIT = 10;
-const FILTER_ORDER: FilterType[] = ['all', 'screenshots', 'camera', 'downloads', 'other'];
 const MILESTONE_COUNTS = [5, 25, 50, 100];
+const BASE_FILTER_ORDER: FilterType[] = ['all', 'screenshots', 'camera', 'downloads'];
+let cachedFilterChipQueueOrder: string[] | null = null;
+let cachedFilterChipFilesById: Record<string, FileItem> | null = null;
+let cachedFilterChips: FilterChip[] = [];
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -114,8 +122,45 @@ function isActionableStatus(status: FileStatus): boolean {
   return status === 'pending' || status === 'skipped';
 }
 
+function slugifyFolderKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getFolderFilterId(file: Pick<FileItem, 'albumId' | 'albumTitle'>): FolderFilterType | null {
+  if (file.albumId) {
+    return `folder:${file.albumId}`;
+  }
+
+  if (!file.albumTitle) {
+    return null;
+  }
+
+  const slug = slugifyFolderKey(file.albumTitle);
+  return slug ? (`folder:title:${slug}` as FolderFilterType) : null;
+}
+
+function isFolderFilter(filter: FilterType): filter is FolderFilterType {
+  return filter.startsWith('folder:');
+}
+
 function matchesFilter(file: FileItem, activeFilter: FilterType): boolean {
-  return activeFilter === 'all' ? true : file.bucketType === activeFilter;
+  if (activeFilter === 'all') {
+    return true;
+  }
+
+  if (isFolderFilter(activeFilter)) {
+    return file.bucketType === 'other' && getFolderFilterId(file) === activeFilter;
+  }
+
+  if (activeFilter === 'other') {
+    return file.bucketType === 'other' && !file.albumTitle;
+  }
+
+  return file.bucketType === activeFilter;
 }
 
 function parseDateValue(value: string | null): number {
@@ -227,6 +272,35 @@ function appendAnalyticsEvent(events: AnalyticsEvent[], name: AnalyticsEvent['na
   ].slice(0, 80);
 }
 
+function appendActionLogIfEnabled(
+  state: PersistedAppState,
+  action: ReviewAction,
+  fileId: string,
+  result: ActionLog['result'],
+  bytesDelta: number = 0,
+  errorCode?: string,
+  errorMessage?: string
+): ActionLog[] {
+  if (!state.settings.debugLoggingEnabled) {
+    return state.actionLogs;
+  }
+
+  return appendActionLog(state.actionLogs, action, fileId, state.sessionId, result, bytesDelta, errorCode, errorMessage);
+}
+
+function appendAnalyticsEventIfEnabled(
+  state: PersistedAppState,
+  events: AnalyticsEvent[],
+  name: AnalyticsEvent['name'],
+  sessionId: string
+): AnalyticsEvent[] {
+  if (!state.settings.debugLoggingEnabled) {
+    return events;
+  }
+
+  return appendAnalyticsEvent(events, name, sessionId);
+}
+
 function maybeCaptureSummary(state: PersistedAppState, stats: SessionStats) {
   if (!state.sessionId) {
     return null;
@@ -303,6 +377,18 @@ function appendUndoEntry(entries: UndoEntry[], entry: UndoEntry): UndoEntry[] {
   return [entry, ...pruneExpiredUndoEntries(entries)].slice(0, UNDO_BUFFER_LIMIT);
 }
 
+function appendRecentMoveTarget(targets: MoveTarget[], target: MoveTarget): MoveTarget[] {
+  const targetKey = target.albumId ?? target.albumName;
+
+  return [
+    {
+      ...target,
+      lastUsedAt: nowIso(),
+    },
+    ...targets.filter((existing) => (existing.albumId ?? existing.albumName) !== targetKey),
+  ].slice(0, 5);
+}
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set) => ({
@@ -318,7 +404,7 @@ export const useAppStore = create<AppStore>()(
           const sessionStats = resetProgress ? createEmptySessionStats() : state.sessionStats;
           const analyticsEvents =
             sessionId && (resetProgress || !state.sessionId)
-              ? appendAnalyticsEvent(state.analyticsEvents, 'session_start', sessionId)
+              ? appendAnalyticsEventIfEnabled(state, state.analyticsEvents, 'session_start', sessionId)
               : state.analyticsEvents;
 
           return {
@@ -414,8 +500,10 @@ export const useAppStore = create<AppStore>()(
           const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
           const analyticsEvents = state.sessionId
             ? [
-                ...(state.sessionStats.reviewedCount === 0 ? [appendAnalyticsEvent([], 'first_swipe', state.sessionId)[0]] : []),
-                ...(milestone ? [appendAnalyticsEvent([], 'milestone_hit', state.sessionId)[0]] : []),
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
                 ...state.analyticsEvents,
               ].slice(0, 80)
             : state.analyticsEvents;
@@ -428,7 +516,7 @@ export const useAppStore = create<AppStore>()(
             activeMilestone: milestone ?? state.activeMilestone,
             analyticsEvents,
             undoEntries: appendUndoEntry(state.undoEntries, createUndoEntry('keep', active, state)),
-            actionLogs: appendActionLog(state.actionLogs, 'keep', active.id, state.sessionId, 'success'),
+            actionLogs: appendActionLogIfEnabled(state, 'keep', active.id, 'success'),
           };
         }),
       skipCurrentFile: () =>
@@ -456,8 +544,10 @@ export const useAppStore = create<AppStore>()(
           const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
           const analyticsEvents = state.sessionId
             ? [
-                ...(state.sessionStats.reviewedCount === 0 ? [appendAnalyticsEvent([], 'first_swipe', state.sessionId)[0]] : []),
-                ...(milestone ? [appendAnalyticsEvent([], 'milestone_hit', state.sessionId)[0]] : []),
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
                 ...state.analyticsEvents,
               ].slice(0, 80)
             : state.analyticsEvents;
@@ -471,7 +561,7 @@ export const useAppStore = create<AppStore>()(
             activeMilestone: milestone ?? state.activeMilestone,
             analyticsEvents,
             undoEntries: appendUndoEntry(state.undoEntries, createUndoEntry('skip', active, state)),
-            actionLogs: appendActionLog(state.actionLogs, 'skip', active.id, state.sessionId, 'success'),
+            actionLogs: appendActionLogIfEnabled(state, 'skip', active.id, 'success'),
           };
         }),
       undoLastAction: () =>
@@ -510,7 +600,7 @@ export const useAppStore = create<AppStore>()(
             sessionSummary: undoEntry.previousSessionSummary,
             activeMilestone: undoEntry.previousActiveMilestone,
             undoEntries: state.undoEntries.filter((entry) => entry.id !== undoEntry.id && isUndoEntryActive(entry)),
-            actionLogs: appendActionLog(state.actionLogs, 'undo', undoEntry.fileId, state.sessionId, 'success'),
+            actionLogs: appendActionLogIfEnabled(state, 'undo', undoEntry.fileId, 'success'),
           };
         }),
       pruneExpiredUndoEntries: () =>
@@ -542,8 +632,10 @@ export const useAppStore = create<AppStore>()(
           const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
           const analyticsEvents = state.sessionId
             ? [
-                ...(state.sessionStats.reviewedCount === 0 ? [appendAnalyticsEvent([], 'first_swipe', state.sessionId)[0]] : []),
-                ...(milestone ? [appendAnalyticsEvent([], 'milestone_hit', state.sessionId)[0]] : []),
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
                 ...state.analyticsEvents,
               ].slice(0, 80)
             : state.analyticsEvents;
@@ -555,7 +647,69 @@ export const useAppStore = create<AppStore>()(
             sessionSummary: maybeCaptureSummary(state, sessionStats),
             activeMilestone: milestone ?? state.activeMilestone,
             analyticsEvents,
-            actionLogs: appendActionLog(state.actionLogs, 'delete', fileId, state.sessionId, 'success', bytesDelta),
+            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'success', bytesDelta),
+          };
+        }),
+      commitMoveSuccess: (fileId, target) =>
+        set((state) => {
+          const active = state.filesById[fileId];
+          if (!active) {
+            return {};
+          }
+
+          const updatedFile: FileItem = {
+            ...active,
+            status: 'moved',
+            albumId: target.albumId ?? active.albumId ?? null,
+            albumTitle: target.albumName,
+            lastActionAt: nowIso(),
+            lastErrorCode: undefined,
+          };
+          const nextFiles: Record<string, FileItem> = {
+            ...state.filesById,
+            [fileId]: updatedFile,
+          };
+          const sessionStats = applySuccessfulAction(state.sessionStats, 'move');
+          const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
+          const analyticsEvents = state.sessionId
+            ? [
+                ...(state.sessionStats.reviewedCount === 0
+                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+                  : []),
+                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
+                ...state.analyticsEvents,
+              ].slice(0, 80)
+            : state.analyticsEvents;
+
+          return {
+            filesById: nextFiles,
+            currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
+            sessionStats,
+            sessionSummary: maybeCaptureSummary(state, sessionStats),
+            activeMilestone: milestone ?? state.activeMilestone,
+            analyticsEvents,
+            recentMoveTargets: appendRecentMoveTarget(state.recentMoveTargets, target),
+            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'success'),
+          };
+        }),
+      recordMoveFailure: (fileId, errorCode, message) =>
+        set((state) => {
+          const active = state.filesById[fileId];
+          if (!active) {
+            return {};
+          }
+
+          const updatedFile: FileItem = {
+            ...active,
+            lastErrorCode: errorCode,
+          };
+
+          return {
+            filesById: {
+              ...state.filesById,
+              [fileId]: updatedFile,
+            },
+            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'failed', 0, errorCode, message),
           };
         }),
       recordDeleteFailure: (fileId, errorCode, message) =>
@@ -575,12 +729,12 @@ export const useAppStore = create<AppStore>()(
               ...state.filesById,
               [fileId]: updatedFile,
             },
-            actionLogs: appendActionLog(state.actionLogs, 'delete', fileId, state.sessionId, 'failed', 0, errorCode, message),
+            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'failed', 0, errorCode, message),
           };
         }),
       recordPreviewOpen: (fileId) =>
         set((state) => ({
-          actionLogs: appendActionLog(state.actionLogs, 'open', fileId, state.sessionId, 'success'),
+          actionLogs: appendActionLogIfEnabled(state, 'open', fileId, 'success'),
         })),
       requestRescan: () =>
         set((state) => ({
@@ -600,10 +754,23 @@ export const useAppStore = create<AppStore>()(
           scanNonce: state.scanNonce + 1,
         })),
       toggleSetting: (key) =>
+        set((state) => {
+          const nextValue = !state.settings[key];
+
+          return {
+            settings: {
+              ...state.settings,
+              [key]: nextValue,
+            },
+            actionLogs: key === 'debugLoggingEnabled' && !nextValue ? [] : state.actionLogs,
+            analyticsEvents: key === 'debugLoggingEnabled' && !nextValue ? [] : state.analyticsEvents,
+          };
+        }),
+      resetOnboarding: () =>
         set((state) => ({
           settings: {
             ...state.settings,
-            [key]: !state.settings[key],
+            hasCompletedOnboarding: false,
           },
         })),
       resetApp: async () => {
@@ -622,6 +789,19 @@ export const useAppStore = create<AppStore>()(
     {
       name: APP_STORAGE_KEY,
       storage: createJSONStorage(() => asyncStorage),
+      merge: (persistedState, currentState) => {
+        const typedPersisted = persistedState as Partial<PersistedAppState> | undefined;
+
+        return {
+          ...currentState,
+          ...typedPersisted,
+          recentMoveTargets: typedPersisted?.recentMoveTargets ?? currentState.recentMoveTargets,
+          settings: {
+            ...INITIAL_SETTINGS,
+            ...(typedPersisted?.settings ?? {}),
+          },
+        };
+      },
       partialize: (state) => ({
         permissionState: state.permissionState,
         sessionMode: state.sessionMode,
@@ -641,6 +821,7 @@ export const useAppStore = create<AppStore>()(
         sessionId: state.sessionId,
         sessionStats: state.sessionStats,
         sessionSummary: state.sessionSummary,
+        recentMoveTargets: state.recentMoveTargets,
         settings: state.settings,
       }),
       onRehydrateStorage: () => (state) => {
@@ -676,23 +857,11 @@ export function selectVisibleQueueCount(state: AppStore): number {
   return getVisibleQueueIds(state).length;
 }
 
-export function selectFilterCounts(state: AppStore): FilterCounts {
-  return FILTER_ORDER.reduce<FilterCounts>(
-    (counts, filterKey) => {
-      counts[filterKey] = state.queueOrder.reduce((count, fileId) => {
-        const file = state.filesById[fileId];
-        return file && isActionableStatus(file.status) && matchesFilter(file, filterKey) ? count + 1 : count;
-      }, 0);
-      return counts;
-    },
-    {
-      all: 0,
-      screenshots: 0,
-      camera: 0,
-      downloads: 0,
-      other: 0,
-    }
-  );
+export function selectFilterCounts(state: AppStore): Record<string, number> {
+  return selectFilterChips(state).reduce<Record<string, number>>((counts, chip) => {
+    counts[chip.id] = chip.count;
+    return counts;
+  }, {});
 }
 
 export function selectTopUndoEntry(state: AppStore): UndoEntry | null {
@@ -704,8 +873,12 @@ export function selectResumeAvailable(state: AppStore): boolean {
 }
 
 export function getFilterLabel(filter: FilterType): string {
+  if (isFolderFilter(filter)) {
+    return 'Folder';
+  }
+
   if (filter === 'all') {
-    return 'All';
+    return 'All images';
   }
 
   if (filter === 'camera') {
@@ -721,6 +894,101 @@ export function getFilterLabel(filter: FilterType): string {
   }
 
   return 'Screenshots';
+}
+
+export function selectFilterChips(state: AppStore): FilterChip[] {
+  if (cachedFilterChipQueueOrder === state.queueOrder && cachedFilterChipFilesById === state.filesById) {
+    return cachedFilterChips;
+  }
+
+  const baseCounts: Record<'all' | BucketType, number> = {
+    all: 0,
+    screenshots: 0,
+    camera: 0,
+    downloads: 0,
+    other: 0,
+  };
+  const folderCounts = new Map<FolderFilterType, { label: string; count: number }>();
+
+  for (const fileId of state.queueOrder) {
+    const file = state.filesById[fileId];
+    if (!file || !isActionableStatus(file.status)) {
+      continue;
+    }
+
+    baseCounts.all += 1;
+
+    if (file.bucketType === 'screenshots' || file.bucketType === 'camera' || file.bucketType === 'downloads') {
+      baseCounts[file.bucketType] += 1;
+      continue;
+    }
+
+    const folderFilterId = getFolderFilterId(file);
+    if (!folderFilterId || !file.albumTitle) {
+      baseCounts.other += 1;
+      continue;
+    }
+
+    const existing = folderCounts.get(folderFilterId);
+    folderCounts.set(folderFilterId, {
+      label: file.albumTitle,
+      count: (existing?.count ?? 0) + 1,
+    });
+  }
+
+  const chips: FilterChip[] = BASE_FILTER_ORDER.map((filterId) => {
+    const count =
+      filterId === 'all'
+        ? baseCounts.all
+        : filterId === 'screenshots'
+          ? baseCounts.screenshots
+          : filterId === 'camera'
+            ? baseCounts.camera
+            : baseCounts.downloads;
+
+    return {
+      id: filterId,
+      label: getFilterLabel(filterId),
+      count,
+    };
+  });
+
+  const folderChips: FilterChip[] = [...folderCounts.entries()]
+    .sort((left, right) => left[1].label.localeCompare(right[1].label))
+    .map(([id, value]) => ({
+      id,
+      label: value.label,
+      count: value.count,
+    }));
+
+  if (baseCounts.other > 0) {
+    folderChips.push({
+      id: 'other',
+      label: getFilterLabel('other'),
+      count: baseCounts.other,
+    });
+  }
+
+  cachedFilterChipQueueOrder = state.queueOrder;
+  cachedFilterChipFilesById = state.filesById;
+  cachedFilterChips = [...chips, ...folderChips];
+
+  return cachedFilterChips;
+}
+
+export function getActiveFilterLabel(state: Pick<AppStore, 'activeFilter' | 'filesById' | 'queueOrder'>): string {
+  if (!isFolderFilter(state.activeFilter)) {
+    return getFilterLabel(state.activeFilter);
+  }
+
+  for (const fileId of state.queueOrder) {
+    const file = state.filesById[fileId];
+    if (file && getFolderFilterId(file) === state.activeFilter && file.albumTitle) {
+      return file.albumTitle;
+    }
+  }
+
+  return 'Folder';
 }
 
 export function getSortLabel(sortMode: SortMode): string {

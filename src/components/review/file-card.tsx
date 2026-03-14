@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { colors, radius, shadows, spacing, typography } from '../../constants/ui-tokens';
 import { formatBytes, formatCompactDate } from '../../lib/format';
+import { useAppStore } from '../../store/app-store';
 import type { FileItem } from '../../types/file-item';
 
 const { width } = Dimensions.get('window');
@@ -17,6 +18,7 @@ type FileCardProps = {
   onPress: () => void;
   onKeepGesture: () => void;
   onDeleteGesture: () => void;
+  onOpenSecondaryActions?: () => void;
 };
 
 function FileCardComponent({
@@ -27,11 +29,15 @@ function FileCardComponent({
   onPress,
   onKeepGesture,
   onDeleteGesture,
+  onOpenSecondaryActions,
 }: FileCardProps) {
+  const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
+  const soundEnabled = useAppStore((state) => state.settings.soundEnabled);
   const translateX = useRef(new Animated.Value(0)).current;
+  const longPressTriggered = useRef(false);
   const rotate = translateX.interpolate({
     inputRange: [-width, 0, width],
-    outputRange: ['-12deg', '0deg', '12deg'],
+    outputRange: animationsEnabled ? ['-12deg', '0deg', '12deg'] : ['0deg', '0deg', '0deg'],
     extrapolate: 'clamp',
   });
 
@@ -56,6 +62,12 @@ function FileCardComponent({
         })
         .onEnd((event) => {
           if (event.translationX > SWIPE_THRESHOLD) {
+            if (!animationsEnabled) {
+              translateX.setValue(0);
+              onKeepGesture();
+              return;
+            }
+
             Animated.timing(translateX, {
               toValue: width * 1.05,
               duration: 180,
@@ -68,6 +80,12 @@ function FileCardComponent({
           }
 
           if (event.translationX < -SWIPE_THRESHOLD) {
+            if (!animationsEnabled) {
+              translateX.setValue(0);
+              onDeleteGesture();
+              return;
+            }
+
             Animated.sequence([
               Animated.timing(translateX, {
                 toValue: -width * 0.25,
@@ -83,12 +101,17 @@ function FileCardComponent({
             return;
           }
 
+          if (!animationsEnabled) {
+            translateX.setValue(0);
+            return;
+          }
+
           Animated.spring(translateX, {
             toValue: 0,
             useNativeDriver: true,
           }).start();
         }),
-    [current, disabled, onDeleteGesture, onKeepGesture, translateX]
+    [animationsEnabled, current, disabled, onDeleteGesture, onKeepGesture, translateX]
   );
 
   if (!current) {
@@ -104,9 +127,41 @@ function FileCardComponent({
       ))}
       <GestureDetector gesture={gesture}>
         <Animated.View style={[styles.card, { transform: [{ translateX }, { rotate }] }]}>
-          <Pressable onPress={onPress} style={styles.pressable}>
+          <Pressable
+            android_disableSound={!soundEnabled}
+            delayLongPress={280}
+            onLongPress={
+              onOpenSecondaryActions
+                ? () => {
+                    longPressTriggered.current = true;
+                    onOpenSecondaryActions();
+                  }
+                : undefined
+            }
+            onPress={() => {
+              if (longPressTriggered.current) {
+                longPressTriggered.current = false;
+                return;
+              }
+
+              onPress();
+            }}
+            style={styles.pressable}
+          >
             <Image source={{ uri: current.previewUri }} style={styles.image} resizeMode="cover" />
             <Animated.View pointerEvents="none" style={[styles.tint, { opacity: tintOpacity, backgroundColor: tintColor }]} />
+            {onOpenSecondaryActions ? (
+              <Pressable
+                accessibilityLabel="Open secondary actions"
+                accessibilityRole="button"
+                android_disableSound={!soundEnabled}
+                hitSlop={10}
+                onPress={onOpenSecondaryActions}
+                style={styles.overflowButton}
+              >
+                <Text style={styles.overflowButtonLabel}>More</Text>
+              </Pressable>
+            ) : null}
             {showHints ? (
               <View style={styles.hintRow}>
                 <Text style={styles.hintLeft}>Delete</Text>
@@ -119,7 +174,7 @@ function FileCardComponent({
                   {current.name}
                 </Text>
                 <Text style={styles.fileMeta}>
-                  {formatCompactDate(current.createdAt)} · {formatBytes(current.sizeBytes)}
+                  {formatCompactDate(current.createdAt)} Â· {formatBytes(current.sizeBytes)}
                 </Text>
               </View>
               <Text style={styles.bucket}>{current.bucketType}</Text>
@@ -181,6 +236,22 @@ const styles = StyleSheet.create({
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
+  },
+  overflowButton: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(8,12,20,0.58)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  overflowButtonLabel: {
+    color: colors.white,
+    fontFamily: typography.bold,
+    fontSize: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   hintRow: {
     position: 'absolute',

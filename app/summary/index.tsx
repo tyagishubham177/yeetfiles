@@ -7,6 +7,7 @@ import { UndoToast } from '../../src/components/review/undo-toast';
 import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
+import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
 import { formatBytes, formatDuration } from '../../src/lib/format';
 import { getQuickSessionLabel, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
 
@@ -19,6 +20,7 @@ export default function SummaryScreen() {
   const dismissSummary = useAppStore((state) => state.dismissSummary);
   const undoLastAction = useAppStore((state) => state.undoLastAction);
   const topUndoEntry = useAppStore(selectTopUndoEntry);
+  const hapticsEnabled = useAppStore((state) => state.settings.hapticsEnabled);
 
   useEffect(() => {
     if (!summary) {
@@ -55,6 +57,12 @@ export default function SummaryScreen() {
     router.replace(ROUTES.queue);
   };
 
+  const handleUndo = () => {
+    undoLastAction();
+    triggerInteractionFeedback('undo', hapticsEnabled);
+    router.replace(ROUTES.queue);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -81,6 +89,10 @@ export default function SummaryScreen() {
             <Text style={styles.statLabel}>Deleted</Text>
             <Text style={styles.statValue}>{summary.deletedCount}</Text>
           </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Moved</Text>
+            <Text style={styles.statValue}>{summary.movedCount}</Text>
+          </View>
           <View style={styles.statCardWide}>
             <Text style={styles.statLabel}>Skipped for later</Text>
             <Text style={styles.statValue}>{summary.skippedCount}</Text>
@@ -96,10 +108,7 @@ export default function SummaryScreen() {
         {topUndoEntry ? (
           <UndoToast
             entry={topUndoEntry}
-            onUndo={() => {
-              undoLastAction();
-              router.replace(ROUTES.queue);
-            }}
+            onUndo={handleUndo}
             tone="light"
           />
         ) : null}

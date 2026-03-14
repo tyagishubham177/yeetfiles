@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
@@ -10,29 +10,35 @@ import { EmptyState } from '../../src/components/review/empty-state';
 import { FileCard } from '../../src/components/review/file-card';
 import { FilterChipRow } from '../../src/components/review/filter-chip-row';
 import { MilestoneBanner } from '../../src/components/review/milestone-banner';
+import { MoveDestinationSheet } from '../../src/components/review/move-destination-sheet';
+import { PhotoPreviewModal } from '../../src/components/review/photo-preview-modal';
 import { PermissionPanel } from '../../src/components/review/permission-panel';
 import { ProgressHeader } from '../../src/components/review/progress-header';
+import { SecondaryActionsSheet } from '../../src/components/review/secondary-actions-sheet';
 import { UndoToast } from '../../src/components/review/undo-toast';
 import { Button } from '../../src/components/ui/button';
 import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
 import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
+import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
+import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatCompactDate } from '../../src/lib/format';
 import {
-  getFilterLabel,
+  getActiveFilterLabel,
   getQuickSessionLabel,
   getSortLabel,
   selectCurrentFile,
-  selectFilterCounts,
+  selectFilterChips,
   selectNextStackItems,
   selectPendingQueueCount,
   selectTopUndoEntry,
   selectVisibleQueueCount,
   useAppStore,
 } from '../../src/store/app-store';
+import type { MoveTarget } from '../../src/types/app-state';
 import type { FilterType, SortMode } from '../../src/types/file-item';
 
 const SORT_OPTIONS: SortMode[] = ['oldest_first', 'newest_first', 'largest_first', 'random'];
@@ -56,7 +62,7 @@ export default function QueueScreen() {
   const activeMilestone = useAppStore((state) => state.activeMilestone);
   const pendingQueueCount = useAppStore(selectPendingQueueCount);
   const visibleQueueCount = useAppStore(selectVisibleQueueCount);
-  const filterCounts = useAppStore(useShallow(selectFilterCounts));
+  const filterChips = useAppStore(useShallow(selectFilterChips));
   const topUndoEntry = useAppStore(selectTopUndoEntry);
   const undoEntries = useAppStore((state) => state.undoEntries);
   const setPermissionState = useAppStore((state) => state.setPermissionState);
@@ -67,11 +73,20 @@ export default function QueueScreen() {
   const dismissMilestone = useAppStore((state) => state.dismissMilestone);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const recordPreviewOpen = useAppStore((state) => state.recordPreviewOpen);
+  const recentMoveTargets = useAppStore((state) => state.recentMoveTargets);
   const settings = useAppStore((state) => state.settings);
-  const { keepCurrent, skipCurrent, deleteCurrent, isDeleting } = useReviewActions();
+  const { keepCurrent, skipCurrent, deleteCurrent, moveCurrent, isDeleting, isMoving } = useReviewActions();
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
+  const [secondaryActionsOpen, setSecondaryActionsOpen] = useState(false);
+  const [moveSheetOpen, setMoveSheetOpen] = useState(false);
+  const [selectedMoveTarget, setSelectedMoveTarget] = useState<MoveTarget | null>(null);
+  const [availableMoveTargets, setAvailableMoveTargets] = useState<MoveTarget[]>([]);
+  const [pendingAlbumName, setPendingAlbumName] = useState('');
+  const [loadingMoveTargets, setLoadingMoveTargets] = useState(false);
+  const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
+  const [secondaryFeedback, setSecondaryFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     if (sessionSummary) {
@@ -112,6 +127,7 @@ export default function QueueScreen() {
   const sessionLabel = getQuickSessionLabel((targetCount as 10 | 25 | 50 | null) ?? 10);
   const sortLabel = getSortLabel(sortMode);
   const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
+  const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
 
   useEffect(() => {
     if (!topUndoEntry) {
@@ -137,6 +153,18 @@ export default function QueueScreen() {
     return () => clearTimeout(timeoutId);
   }, [activeMilestone, dismissMilestone]);
 
+  useEffect(() => {
+    if (!secondaryFeedback) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setSecondaryFeedback(null);
+    }, 3200);
+
+    return () => clearTimeout(timeoutId);
+  }, [secondaryFeedback]);
+
   const retryPermission = async () => {
     const nextPermissionState = await requestMediaPermissionState();
     setPermissionState(nextPermissionState);
@@ -161,8 +189,104 @@ export default function QueueScreen() {
     }
 
     recordPreviewOpen(currentFile.id);
+    triggerInteractionFeedback('preview_open', settings.hapticsEnabled);
     setPreviewOpen(true);
   };
+
+  const handlePreviewKeep = () => {
+    setPreviewOpen(false);
+    keepCurrent();
+  };
+
+  const handlePreviewSkip = () => {
+    setPreviewOpen(false);
+    skipCurrent();
+  };
+
+  const handlePreviewDelete = () => {
+    setPreviewOpen(false);
+    setDeleteSheetOpen(true);
+  };
+
+  const shareCurrent = async () => {
+    if (!currentFile) {
+      return;
+    }
+
+    try {
+      await Share.share({
+        title: currentFile.name,
+        message: currentFile.name,
+        url: currentFile.uri,
+      });
+    } catch {
+      Alert.alert('Share unavailable', 'We could not open the native share sheet for this photo.');
+    }
+  };
+
+  const openSecondaryActions = () => {
+    if (!currentFile || isDeleting || isMoving) {
+      return;
+    }
+
+    setSecondaryActionsOpen(true);
+  };
+
+  const loadMoveTargets = async () => {
+    setLoadingMoveTargets(true);
+
+    try {
+      const targets = await getMoveTargets();
+      setAvailableMoveTargets(targets);
+    } catch {
+      setMoveErrorMessage('We could not load the media-library albums. Try again.');
+    } finally {
+      setLoadingMoveTargets(false);
+    }
+  };
+
+  const confirmMove = async () => {
+    if (!selectedMoveTarget) {
+      setMoveErrorMessage('Choose a destination folder before confirming the move.');
+      return;
+    }
+
+    const result = await moveCurrent(selectedMoveTarget);
+
+    if (!result.ok) {
+      setMoveErrorMessage(result.message);
+      setSecondaryFeedback({
+        tone: 'error',
+        message: `Move failed: ${result.message}`,
+      });
+      return;
+    }
+
+    setMoveErrorMessage(null);
+    setMoveSheetOpen(false);
+    setSecondaryActionsOpen(false);
+    setSelectedMoveTarget(result.target);
+    setPendingAlbumName('');
+    setSecondaryFeedback({
+      tone: 'success',
+      message: `Moved to ${result.target.label}`,
+    });
+  };
+
+  const openMoveFlow = () => {
+    setSecondaryActionsOpen(false);
+    setMoveErrorMessage(null);
+    setPendingAlbumName('');
+    setMoveSheetOpen(true);
+    void loadMoveTargets();
+  };
+
+  const handleUndo = () => {
+    undoLastAction();
+    triggerInteractionFeedback('undo', settings.hapticsEnabled);
+  };
+
+  const busy = isDeleting || isMoving;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -172,7 +296,7 @@ export default function QueueScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
           <Text style={styles.queueTitle}>Queue</Text>
-          <Pressable onPress={() => router.push(ROUTES.settings)}>
+          <Pressable android_disableSound={!settings.soundEnabled} onPress={() => router.push(ROUTES.settings)}>
             <Text style={styles.settingsLink}>Settings</Text>
           </Pressable>
         </View>
@@ -191,13 +315,19 @@ export default function QueueScreen() {
           scanProgressTotal={scanProgressTotal}
         />
 
-        <FilterChipRow activeFilter={activeFilter} counts={filterCounts} onSelect={(filter) => setActiveFilter(filter)} />
+        <FilterChipRow activeFilter={activeFilter} chips={filterChips} onSelect={(filter) => setActiveFilter(filter)} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
           {SORT_OPTIONS.map((option) => {
             const selected = option === sortMode;
 
             return (
-              <Pressable key={option} accessibilityRole="button" onPress={() => setSortMode(option)} style={[styles.sortChip, selected && styles.sortChipSelected]}>
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                android_disableSound={!settings.soundEnabled}
+                onPress={() => setSortMode(option)}
+                style={[styles.sortChip, selected && styles.sortChipSelected]}
+              >
                 <Text style={[styles.sortChipLabel, selected && styles.sortChipLabelSelected]}>{getSortLabel(option)}</Text>
               </Pressable>
             );
@@ -218,30 +348,36 @@ export default function QueueScreen() {
               </Text>
               {scanError ? <Text style={styles.scanError}>{scanError}</Text> : null}
             </View>
+            {secondaryFeedback ? (
+              <View style={[styles.secondaryFeedbackCard, secondaryFeedback.tone === 'error' && styles.secondaryFeedbackCardError]}>
+                <Text style={styles.secondaryFeedbackText}>{secondaryFeedback.message}</Text>
+              </View>
+            ) : null}
             <View style={styles.cardWrap}>
               <FileCard
                 current={currentFile}
                 nextItems={nextItems}
-                disabled={isDeleting}
+                disabled={busy}
                 showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
                 onPress={openPreview}
                 onKeepGesture={keepCurrent}
                 onDeleteGesture={() => setDeleteSheetOpen(true)}
+                onOpenSecondaryActions={openSecondaryActions}
               />
             </View>
             <ActionDock
               onDelete={() => setDeleteSheetOpen(true)}
               onKeep={keepCurrent}
               onSkip={skipCurrent}
-              onUndo={topUndoEntry ? undoLastAction : undefined}
+              onUndo={topUndoEntry ? handleUndo : undefined}
               undoCount={undoEntries.length}
-              disabled={isDeleting}
+              disabled={busy}
             />
           </>
         ) : filterEmpty ? (
           <View style={styles.emptyWrap}>
             <EmptyState
-              title={`No ${getFilterLabel(activeFilter).toLowerCase()} cards left`}
+              title={`No ${activeFilterLabel.toLowerCase()} cards left`}
               body="Try another filter or switch back to all photos to keep the session moving."
               actionLabel="Show all photos"
               onAction={() => setActiveFilter('all' as FilterType)}
@@ -275,7 +411,7 @@ export default function QueueScreen() {
 
       {topUndoEntry ? (
         <View style={styles.undoToastWrap}>
-          <UndoToast entry={topUndoEntry} onUndo={undoLastAction} />
+          <UndoToast entry={topUndoEntry} onUndo={handleUndo} />
         </View>
       ) : null}
 
@@ -294,42 +430,52 @@ export default function QueueScreen() {
         ) : null}
         <View style={styles.sheetActions}>
           <Button label="Cancel" onPress={() => setDeleteSheetOpen(false)} variant="secondary" />
-          <Button label={isDeleting ? 'Deleting...' : 'Delete permanently'} onPress={() => void confirmDelete()} variant="danger" disabled={isDeleting} />
+          <Button label={isDeleting ? 'Deleting...' : 'Delete permanently'} onPress={() => void confirmDelete()} variant="danger" disabled={busy} />
         </View>
       </Sheet>
 
-      <Modal visible={previewOpen} animationType="fade" onRequestClose={() => setPreviewOpen(false)}>
-        <View style={styles.previewWrap}>
-          <SafeAreaView style={styles.previewSafeArea}>
-            <View style={styles.previewHeader}>
-              <Text style={styles.previewTitle}>Preview</Text>
-              <Pressable onPress={() => setPreviewOpen(false)}>
-                <Text style={styles.previewClose}>Close</Text>
-              </Pressable>
-            </View>
-            {currentFile ? (
-              <>
-                <View style={styles.previewCard}>
-                  <FileCard
-                    current={currentFile}
-                    nextItems={[]}
-                    disabled
-                    showHints={false}
-                    onPress={() => undefined}
-                    onKeepGesture={() => undefined}
-                    onDeleteGesture={() => undefined}
-                  />
-                </View>
-                <View style={styles.previewMetaCard}>
-                  <Text style={styles.previewMetaTitle}>{currentFile.name}</Text>
-                  <Text style={styles.previewMetaBody}>{formatCompactDate(currentFile.createdAt)}</Text>
-                  <Text style={styles.previewMetaBody}>{formatBytes(currentFile.sizeBytes)}</Text>
-                </View>
-              </>
-            ) : null}
-          </SafeAreaView>
-        </View>
-      </Modal>
+      <SecondaryActionsSheet
+        visible={secondaryActionsOpen}
+        fileName={currentFile?.name}
+        onClose={() => setSecondaryActionsOpen(false)}
+        onMove={openMoveFlow}
+        onShare={() => {
+          setSecondaryActionsOpen(false);
+          void shareCurrent();
+        }}
+      />
+
+      <MoveDestinationSheet
+        visible={moveSheetOpen}
+        selectedTarget={selectedMoveTarget}
+        recentTargets={recentMoveTargets}
+        availableTargets={availableMoveTargets}
+        pendingAlbumName={pendingAlbumName}
+        isLoadingTargets={loadingMoveTargets}
+        isMoving={isMoving}
+        errorMessage={moveErrorMessage}
+        onClose={() => setMoveSheetOpen(false)}
+        onPendingAlbumNameChange={setPendingAlbumName}
+        onSelectTarget={(target) => {
+          setSelectedMoveTarget(target);
+          setPendingAlbumName(target.isNew ? target.albumName : '');
+          setMoveErrorMessage(null);
+        }}
+        onConfirmMove={() => void confirmMove()}
+      />
+
+      <PhotoPreviewModal
+        visible={previewOpen}
+        file={currentFile}
+        isDeleting={isDeleting}
+        animationsEnabled={settings.animationsEnabled}
+        soundEnabled={settings.soundEnabled}
+        onClose={() => setPreviewOpen(false)}
+        onKeep={handlePreviewKeep}
+        onSkip={handlePreviewSkip}
+        onDelete={handlePreviewDelete}
+        onShare={() => void shareCurrent()}
+      />
     </SafeAreaView>
   );
 }
@@ -393,6 +539,24 @@ const styles = StyleSheet.create({
     color: '#FFC2B4',
     fontFamily: typography.medium,
     fontSize: 13,
+  },
+  secondaryFeedbackCard: {
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(46,194,126,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(46,194,126,0.3)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  secondaryFeedbackCardError: {
+    backgroundColor: 'rgba(231,111,81,0.16)',
+    borderColor: 'rgba(231,111,81,0.3)',
+  },
+  secondaryFeedbackText: {
+    color: colors.white,
+    fontFamily: typography.medium,
+    fontSize: 14,
+    lineHeight: 21,
   },
   cardWrap: {
     flex: 1,
@@ -503,49 +667,5 @@ const styles = StyleSheet.create({
   },
   sheetActions: {
     gap: spacing.sm,
-  },
-  previewWrap: {
-    flex: 1,
-    backgroundColor: colors.stage,
-  },
-  previewSafeArea: {
-    flex: 1,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  previewTitle: {
-    color: colors.white,
-    fontFamily: typography.display,
-    fontSize: 30,
-  },
-  previewClose: {
-    color: 'rgba(249,250,251,0.84)',
-    fontFamily: typography.medium,
-    fontSize: 15,
-  },
-  previewCard: {
-    flex: 1,
-    minHeight: 420,
-  },
-  previewMetaCard: {
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    padding: spacing.md,
-    gap: 4,
-  },
-  previewMetaTitle: {
-    color: colors.white,
-    fontFamily: typography.bold,
-    fontSize: 16,
-  },
-  previewMetaBody: {
-    color: 'rgba(249,250,251,0.82)',
-    fontFamily: typography.body,
-    fontSize: 14,
   },
 });

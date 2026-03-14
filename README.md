@@ -9,7 +9,7 @@ This repository is still docs-first, but the direction is now much sharper: get 
 - Repo codename: `YeetFiles`
 - Product working name: `FileSwipe`
 - Branching model: work happens on `codex/` branches into `main`
-- Current delivery target: Phase 1 trust and reward vertical slice
+- Current delivery target: Phase 3 scaling and re-scan
 - Primary platform: Android only
 
 ## Running On Android
@@ -107,12 +107,12 @@ Start here:
 
 ## Near-term milestone
 
-Phase 1 turns the proven first-swipe loop into something people would plausibly return to:
+Phase 3 should now focus on reliability across medium and large libraries:
 
-- safe undo for reversible review actions
-- stronger progress and reward feedback
-- filter chips and session target choices that persist
-- a more celebratory session summary without weakening delete trust
+- re-scan photos without reintroducing already reviewed items
+- highlight newly added files since the last snapshot
+- keep queue performance steady on larger libraries
+- make interruption and resume behavior more resilient
 
 ## Repo rule of thumb
 

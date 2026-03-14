@@ -9,6 +9,7 @@ export function createEmptySessionStats(): SessionStats {
     keptCount: 0,
     deletedCount: 0,
     skippedCount: 0,
+    movedCount: 0,
     storageFreedBytes: 0,
     startedAt: nowIso(),
     lastUpdatedAt: nowIso(),
@@ -39,6 +40,10 @@ export function applySuccessfulAction(
     next.storageFreedBytes += Math.max(bytesDelta, 0);
   }
 
+  if (action === 'move') {
+    next.movedCount += 1;
+  }
+
   return next;
 }
 
@@ -66,6 +71,10 @@ export function rollbackSuccessfulAction(
     next.storageFreedBytes = Math.max(stats.storageFreedBytes - Math.max(bytesDelta, 0), 0);
   }
 
+  if (action === 'move') {
+    next.movedCount = Math.max(stats.movedCount - 1, 0);
+  }
+
   return next;
 }
 
@@ -90,6 +99,7 @@ export function buildSessionSummary(
     keptCount: stats.keptCount,
     deletedCount: stats.deletedCount,
     skippedCount: stats.skippedCount,
+    movedCount: stats.movedCount,
     storageFreedBytes: stats.storageFreedBytes,
     durationMs: durationFrom(stats.startedAt, endedAt),
     targetCount,
