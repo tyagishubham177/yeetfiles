@@ -1,32 +1,29 @@
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 
 import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
-import { getFilterLabel } from '../../store/app-store';
-import type { FilterType } from '../../types/file-item';
+import type { FilterChip, FilterType } from '../../types/file-item';
 
 type FilterChipRowProps = {
   activeFilter: FilterType;
-  counts: Record<FilterType, number>;
+  chips: FilterChip[];
   onSelect: (filter: FilterType) => void;
 };
 
-const FILTERS: FilterType[] = ['all', 'screenshots', 'camera', 'downloads', 'other'];
-
-export function FilterChipRow({ activeFilter, counts, onSelect }: FilterChipRowProps) {
+export function FilterChipRow({ activeFilter, chips, onSelect }: FilterChipRowProps) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-      {FILTERS.map((filter) => {
-        const selected = filter === activeFilter;
+      {chips.map((chip) => {
+        const selected = chip.id === activeFilter;
 
         return (
           <Pressable
-            key={filter}
+            key={chip.id}
             accessibilityRole="button"
-            onPress={() => onSelect(filter)}
+            onPress={() => onSelect(chip.id)}
             style={[styles.chip, selected && styles.chipSelected]}
           >
             <Text style={[styles.label, selected && styles.labelSelected]}>
-              {getFilterLabel(filter)} ({counts[filter] ?? 0})
+              {chip.label} ({chip.count})
             </Text>
           </Pressable>
         );

@@ -1,4 +1,4 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
@@ -46,6 +46,9 @@ export function PhotoPreviewModal({
   onDelete,
   onShare,
 }: PhotoPreviewModalProps) {
+  const { height, width } = useWindowDimensions();
+  const imageHeight = Math.max(240, Math.min(height * 0.38, width * 1.05, 360));
+
   return (
     <Modal visible={visible} animationType={animationsEnabled ? 'fade' : 'none'} onRequestClose={onClose}>
       <View style={styles.wrap}>
@@ -62,11 +65,17 @@ export function PhotoPreviewModal({
 
           {file ? (
             <View style={styles.content}>
-              <View style={styles.imageCard}>
-                <ZoomablePreviewImage uri={file.previewUri} />
+              <View style={[styles.imageCard, { height: imageHeight }]}>
+                <ZoomablePreviewImage uri={file.previewUri} height={imageHeight - spacing.md * 2} />
               </View>
 
-              <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+              <ScrollView
+                style={styles.detailScroll}
+                contentContainerStyle={styles.detailContent}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+                bounces={false}
+              >
                 <View style={styles.metaCard}>
                   <View style={styles.metaHeader}>
                     <Text style={styles.fileName}>{file.name}</Text>
@@ -154,8 +163,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   imageCard: {
-    flex: 1,
-    minHeight: 320,
     borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: 'rgba(255,255,255,0.06)',
@@ -165,6 +172,7 @@ const styles = StyleSheet.create({
   },
   detailScroll: {
     flex: 1,
+    minHeight: 0,
   },
   detailContent: {
     gap: spacing.md,

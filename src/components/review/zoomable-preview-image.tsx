@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 type ZoomablePreviewImageProps = {
   uri: string;
+  height?: number;
 };
 
 const MIN_SCALE = 1;
@@ -13,7 +14,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
+export function ZoomablePreviewImage({ uri, height = 420 }: ZoomablePreviewImageProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -98,6 +99,7 @@ export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
         <Animated.View
           style={[
             styles.imageWrap,
+            { height },
             {
               transform: [{ translateX }, { translateY }, { scale }],
             },
@@ -113,14 +115,12 @@ export function ZoomablePreviewImage({ uri }: ZoomablePreviewImageProps) {
 const styles = StyleSheet.create({
   wrap: {
     width: '100%',
-    minHeight: 420,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   imageWrap: {
     width: '100%',
-    height: 420,
     alignItems: 'center',
     justifyContent: 'center',
   },
