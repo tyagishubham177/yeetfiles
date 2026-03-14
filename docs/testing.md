@@ -133,13 +133,13 @@ Expected:
 ## Scenario E: delete safety
 
 1. Attempt to delete a photo.
-2. Let the armed-delete state expire without confirming.
+2. Cancel the system delete confirmation.
 3. Attempt delete again and confirm.
 4. Trigger a failure case if possible.
 
 Expected:
 
-- an unconfirmed armed delete does not change status
+- cancelling the system delete confirmation does not change status
 - successful delete updates storage-freed score
 - failed delete does not claim success
 

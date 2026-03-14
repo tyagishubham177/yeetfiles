@@ -11,7 +11,6 @@ type PhotoPreviewModalProps = {
   visible: boolean;
   file: FileItem | null;
   isDeleting: boolean;
-  deleteArmed: boolean;
   animationsEnabled: boolean;
   soundEnabled: boolean;
   onClose: () => void;
@@ -39,7 +38,6 @@ export function PhotoPreviewModal({
   visible,
   file,
   isDeleting,
-  deleteArmed,
   animationsEnabled,
   soundEnabled,
   onClose,
@@ -100,7 +98,7 @@ export function PhotoPreviewModal({
                     <Button label="Skip" onPress={onSkip} variant="secondary" compact style={styles.actionButton} />
                     <Button label="Share" onPress={onShare} variant="secondary" compact style={styles.actionButton} />
                     <Button
-                      label={deleteArmed ? 'Confirm delete' : 'Delete'}
+                      label="Delete"
                       loading={isDeleting}
                       loadingLabel="Deleting..."
                       onPress={onDelete}
@@ -109,9 +107,7 @@ export function PhotoPreviewModal({
                       style={styles.actionButton}
                     />
                   </View>
-                  <Text style={styles.actionHint}>
-                    {deleteArmed ? 'Delete is armed for this photo. One more tap removes it permanently.' : 'Delete now uses a second tap instead of a separate confirmation sheet.'}
-                  </Text>
+                  <Text style={styles.actionHint}>Delete uses the system confirmation when Android requires one.</Text>
                   <Text style={styles.zoomHint}>Pinch to zoom and drag when zoomed in.</Text>
                 </View>
               </ScrollView>

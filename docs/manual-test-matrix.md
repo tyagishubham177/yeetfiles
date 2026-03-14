@@ -58,7 +58,7 @@ This is the practical checklist for device-based validation before a phase is ca
 
 ## Manual evidence to capture
 
-- screenshots of the welcome, queue, armed-delete state, and summary screens
+- screenshots of the welcome, queue, system delete confirmation, and summary screens
 - short notes on first-swipe speed and scan responsiveness
 - exact wording of permission or failure states
 - confirmation that storage-freed numbers behaved correctly

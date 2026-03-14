@@ -72,7 +72,7 @@ These requirements should not wait until the end:
 
 ## Strategic decision gates to revisit
 
-- whether inline armed-delete beats sheet-based confirmation on short sessions
+- whether the system delete confirmation is enough friction on short sessions
 - fixed `Quick 10` versus adaptive quick-session targets like 10, 25, and 50
 - oldest-first versus smart `most deletable first` ordering
 - when to migrate from persisted queue arrays to a cursor model

@@ -11,16 +11,15 @@ type ActionDockProps = {
   onUndo?: () => void;
   undoCount?: number;
   disabled?: boolean;
-  deleteLabel?: string;
 };
 
-export function ActionDock({ onKeep, onDelete, onSkip, onUndo, undoCount = 0, disabled = false, deleteLabel = 'Delete' }: ActionDockProps) {
+export function ActionDock({ onKeep, onDelete, onSkip, onUndo, undoCount = 0, disabled = false }: ActionDockProps) {
   const { colors, isNightMode } = useAppTheme();
 
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
-        <Button label={deleteLabel} onPress={onDelete} variant="danger" disabled={disabled} style={styles.grow} />
+        <Button label="Delete" onPress={onDelete} variant="danger" disabled={disabled} style={styles.grow} />
         <Button label="Keep" onPress={onKeep} disabled={disabled} style={styles.grow} />
       </View>
       <View style={styles.secondaryRow}>

@@ -32,7 +32,7 @@ export function useReviewActions() {
     },
     deleteCurrent: async () => {
       if (!currentFile || isDeleting || isMoving) {
-        return { ok: false as const, message: 'No active photo to delete.' };
+        return { ok: false as const, message: 'No active photo to delete.', errorCode: 'missing_current_file' };
       }
 
       setIsDeleting(true);
@@ -43,7 +43,7 @@ export function useReviewActions() {
         if (!result.ok) {
           recordDeleteFailure(currentFile.id, result.errorCode, result.message);
           triggerInteractionFeedback('delete_failure', hapticsEnabled);
-          return { ok: false as const, message: result.message };
+          return { ok: false as const, message: result.message, errorCode: result.errorCode };
         }
 
         commitDeleteSuccess(currentFile.id, currentFile.sizeBytes);

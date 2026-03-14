@@ -25,7 +25,7 @@ Extend beyond the photos lane only after the photo loop feels excellent, honest,
 | Task | Deliverable | Verification |
 | --- | --- | --- |
 | Name checkpoint | Validate that `YeetFiles` still fits the product best | Lightweight user name test |
-| Delete-friction checkpoint | Replace the repeat delete sheet with a deliberate lower-friction confirm pattern | Real-device short-session validation |
+| Delete-friction checkpoint | Remove redundant app-level delete friction while staying honest about system confirmation | Real-device short-session validation |
 | Store-message checkpoint | Launch copy centers speed and outcome, not file-type breadth | Copy review with non-developers |
 | Trust audit | Final review of delete, undo, and capability claims | Full docs and product walkthrough |
 

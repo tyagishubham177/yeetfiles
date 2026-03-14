@@ -92,14 +92,14 @@ Acceptance criteria:
 
 The app must:
 
-- require an explicit inline second confirmation before permanent delete
+- rely on the platform delete confirmation when Android requires one
 - avoid `delete_candidate` as a user-facing concept
-- keep the file unchanged when delete is not confirmed
+- keep the file unchanged when the system delete confirmation is cancelled
 - only mark the file deleted after the system reports success
 
 Acceptance criteria:
 
-- an unconfirmed delete restores the exact prior state
+- a cancelled system delete leaves the exact prior state intact
 - delete failures never show fake success
 - delete copy is factual and calm, not dramatic
 

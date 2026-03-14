@@ -97,7 +97,6 @@ export default function QueueScreen() {
   const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
   const [isCheckingPermission, setIsCheckingPermission] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [deleteArmedForFileId, setDeleteArmedForFileId] = useState<string | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
@@ -141,7 +140,6 @@ export default function QueueScreen() {
   const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
   const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
   const showTutorialCard = Boolean(currentFile && !settings.hasSeenGestureTutorial && sessionStats.reviewedCount === 0);
-  const deleteArmed = Boolean(currentFile && deleteArmedForFileId === currentFile.id);
   const rescanStatusLabel =
     scanMode === 'rescan' && scanState === 'scanning'
       ? currentScanNewFileCount > 0
@@ -186,29 +184,6 @@ export default function QueueScreen() {
   }, [statusFeedback]);
 
   useEffect(() => {
-    if (!deleteArmedForFileId) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setDeleteArmedForFileId((armedFileId) => (armedFileId === deleteArmedForFileId ? null : armedFileId));
-    }, 4200);
-
-    return () => clearTimeout(timeoutId);
-  }, [deleteArmedForFileId]);
-
-  useEffect(() => {
-    if (!currentFile && deleteArmedForFileId) {
-      setDeleteArmedForFileId(null);
-      return;
-    }
-
-    if (currentFile && deleteArmedForFileId && deleteArmedForFileId !== currentFile.id) {
-      setDeleteArmedForFileId(null);
-    }
-  }, [currentFile, deleteArmedForFileId]);
-
-  useEffect(() => {
     const uris = [currentFile?.previewUri, ...nextItems.map((item) => item.previewUri)].filter(Boolean) as string[];
 
     uris.forEach((uri) => {
@@ -245,15 +220,26 @@ export default function QueueScreen() {
     }
   };
 
-  const confirmDelete = async () => {
-    setDeleteArmedForFileId(null);
+  const requestDelete = async () => {
+    if (!currentFile || busy) {
+      return;
+    }
+
     setStatusFeedback({
       tone: 'info',
-      message: 'Deleting the current photo...',
+      message: 'Opening the system delete confirmation...',
     });
     const result = await deleteCurrent();
 
     if (!result.ok) {
+      if (result.errorCode === 'delete_cancelled') {
+        setStatusFeedback({
+          tone: 'info',
+          message: 'Delete cancelled. The photo stayed in the queue.',
+        });
+        return;
+      }
+
       setStatusFeedback({
         tone: 'error',
         message: `Delete failed: ${result.message}`,
@@ -265,23 +251,6 @@ export default function QueueScreen() {
     setStatusFeedback({
       tone: 'success',
       message: 'Photo deleted. Session stats are updated.',
-    });
-  };
-
-  const requestDelete = () => {
-    if (!currentFile || busy) {
-      return;
-    }
-
-    if (deleteArmed) {
-      void confirmDelete();
-      return;
-    }
-
-    setDeleteArmedForFileId(currentFile.id);
-    setStatusFeedback({
-      tone: 'info',
-      message: 'Delete armed. Tap Confirm delete within 4 seconds to remove this photo permanently.',
     });
   };
 
@@ -306,7 +275,7 @@ export default function QueueScreen() {
   };
 
   const handlePreviewDelete = () => {
-    requestDelete();
+    void requestDelete();
   };
 
   const shareCurrent = async () => {
@@ -419,7 +388,6 @@ export default function QueueScreen() {
   };
 
   const handleUndo = () => {
-    setDeleteArmedForFileId(null);
     undoLastAction();
     triggerInteractionFeedback('undo', settings.hapticsEnabled);
     setStatusFeedback({
@@ -575,20 +543,19 @@ export default function QueueScreen() {
                   showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
                   onPress={openPreview}
                   onKeepGesture={keepCurrent}
-                  onDeleteGesture={requestDelete}
+                  onDeleteGesture={() => void requestDelete()}
                   onOpenSecondaryActions={openSecondaryActions}
                 />
               )}
             </View>
             {showTutorialCard ? null : (
               <ActionDock
-                onDelete={requestDelete}
+                onDelete={() => void requestDelete()}
                 onKeep={keepCurrent}
                 onSkip={skipCurrent}
                 onUndo={topUndoEntry ? handleUndo : undefined}
                 undoCount={undoEntries.length}
                 disabled={busy}
-                deleteLabel={deleteArmed ? 'Confirm delete' : 'Delete'}
               />
             )}
           </>
@@ -679,7 +646,6 @@ export default function QueueScreen() {
         visible={previewOpen}
         file={currentFile}
         isDeleting={isDeleting}
-        deleteArmed={deleteArmed}
         animationsEnabled={settings.animationsEnabled}
         soundEnabled={settings.soundEnabled}
         onClose={() => setPreviewOpen(false)}
