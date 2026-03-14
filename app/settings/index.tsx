@@ -157,8 +157,8 @@ export default function SettingsScreen() {
       const exportFile = exportDebugSnapshot(persistedState as PersistedAppState);
 
       await Share.share({
-        title: 'FileSwipe debug export',
-        message: 'FileSwipe local debug export',
+        title: 'YeetFiles debug export',
+        message: 'YeetFiles local debug export',
         url: exportFile.uri,
       });
       setStatusFeedback({
@@ -206,8 +206,8 @@ export default function SettingsScreen() {
       Alert.alert(
         'Notifications are still off',
         permissionState === 'blocked'
-          ? 'FileSwipe cannot schedule reminders until notifications are allowed in system settings.'
-          : 'FileSwipe only turns reminders on after Android notification permission is granted.'
+          ? 'YeetFiles cannot schedule reminders until notifications are allowed in system settings.'
+          : 'YeetFiles only turns reminders on after Android notification permission is granted.'
       );
       setBusyNotificationKey(null);
       return;
@@ -284,7 +284,7 @@ export default function SettingsScreen() {
             onPress={() => {
               setStatusFeedback({
                 tone: 'info',
-                message: 'Fresh queue requested. FileSwipe will scan in the background.',
+                message: 'Fresh queue requested. YeetFiles will scan in the background.',
               });
               requestRescan();
               router.replace(ROUTES.queue);

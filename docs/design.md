@@ -1,4 +1,4 @@
-# FileSwipe Design Principles
+# YeetFiles Design Principles
 
 ## Design mission
 
@@ -130,7 +130,7 @@ Delete must feel intentional, not scary.
 The UI should communicate that through:
 
 - a clear left-swipe warning state
-- a factual confirmation sheet
+- a factual delete flow that stays deliberate without forcing a separate modal every time
 - stronger warning haptic than `Keep`
 - explicit post-result feedback
 

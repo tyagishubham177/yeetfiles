@@ -1,4 +1,4 @@
-# FileSwipe Product Requirements
+# YeetFiles Product Requirements
 
 ## Purpose
 
@@ -6,7 +6,7 @@ This document expands the product brief into concrete requirements for the first
 
 ## Product stance
 
-FileSwipe is a local-first Android photo cleanup utility with a playful loop. It is not a generic file manager. The product should win by being faster to start, easier to parse, and more satisfying to repeat.
+YeetFiles is a local-first Android photo cleanup utility with a playful loop. It is not a generic file manager. The product should win by being faster to start, easier to parse, and more satisfying to repeat.
 
 ## V1 functional requirements
 
@@ -92,14 +92,14 @@ Acceptance criteria:
 
 The app must:
 
-- use a confirmation sheet before permanent delete
+- require an explicit inline second confirmation before permanent delete
 - avoid `delete_candidate` as a user-facing concept
-- keep the file unchanged when delete is cancelled
+- keep the file unchanged when delete is not confirmed
 - only mark the file deleted after the system reports success
 
 Acceptance criteria:
 
-- cancel restores the exact prior state
+- an unconfirmed delete restores the exact prior state
 - delete failures never show fake success
 - delete copy is factual and calm, not dramatic
 

@@ -1,12 +1,12 @@
-# FileSwipe Product Brief
+# YeetFiles Product Brief
 
-## Working name
+## Product name
 
-FileSwipe
+YeetFiles
 
 ## Repository note
 
-The repository is still named `YeetFiles`, but the product name for planning and UI copy is `FileSwipe`.
+The repository and product now intentionally share the `YeetFiles` name.
 
 ## One-line pitch
 
@@ -14,7 +14,7 @@ An Android-first photo cleanup app that gets the user from welcome to first swip
 
 ## Core product idea
 
-FileSwipe should feel like clearing a backlog, not operating a file manager. The best version of the product is simple enough to start instantly and rewarding enough to return to.
+YeetFiles should feel like clearing a backlog, not operating a file manager. The best version of the product is simple enough to start instantly and rewarding enough to return to.
 
 The loop is:
 
@@ -33,7 +33,7 @@ People accumulate screenshots, old camera photos, downloads, and random visual c
 3. Delete feels risky and hard to trust.
 4. The experience feels like work, so people do it once and never come back.
 
-FileSwipe exists to make cleanup:
+YeetFiles exists to make cleanup:
 
 - faster to start
 - easier to parse
@@ -46,7 +46,7 @@ Make photo cleanup feel quick, safe, and energizing enough that a user will actu
 
 ## Product vision
 
-In its best form, FileSwipe becomes the "daily 10" cleanup loop for an Android phone:
+In its best form, YeetFiles becomes the "daily 10" cleanup loop for an Android phone:
 
 - open fast
 - swipe fast
@@ -117,7 +117,7 @@ Trust is still the central product asset. The app must:
 
 ## Why native instead of web
 
-A browser-based approach is not a credible fit for the core loop. FileSwipe needs:
+A browser-based approach is not a credible fit for the core loop. YeetFiles needs:
 
 - Android media permission integration
 - local persistence for session resume

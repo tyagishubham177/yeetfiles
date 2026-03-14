@@ -19,7 +19,6 @@ import { SecondaryActionsSheet } from '../../src/components/review/secondary-act
 import { UndoToast } from '../../src/components/review/undo-toast';
 import { StatusBanner } from '../../src/components/feedback/status-banner';
 import { Button } from '../../src/components/ui/button';
-import { Sheet } from '../../src/components/ui/sheet';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
@@ -27,7 +26,7 @@ import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
-import { formatBytes, formatCompactDate, formatDateTime } from '../../src/lib/format';
+import { formatBytes, formatDateTime } from '../../src/lib/format';
 import { useAppTheme } from '../../src/lib/theme';
 import {
   getActiveFilterLabel,
@@ -89,7 +88,6 @@ export default function QueueScreen() {
   const { keepCurrent, skipCurrent, deleteCurrent, moveCurrent, isDeleting, isMoving } = useReviewActions();
 
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
   const [secondaryActionsOpen, setSecondaryActionsOpen] = useState(false);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
   const [selectedMoveTarget, setSelectedMoveTarget] = useState<MoveTarget | null>(null);
@@ -99,6 +97,7 @@ export default function QueueScreen() {
   const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
   const [isCheckingPermission, setIsCheckingPermission] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [deleteArmedForFileId, setDeleteArmedForFileId] = useState<string | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
@@ -142,6 +141,7 @@ export default function QueueScreen() {
   const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
   const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
   const showTutorialCard = Boolean(currentFile && !settings.hasSeenGestureTutorial && sessionStats.reviewedCount === 0);
+  const deleteArmed = Boolean(currentFile && deleteArmedForFileId === currentFile.id);
   const rescanStatusLabel =
     scanMode === 'rescan' && scanState === 'scanning'
       ? currentScanNewFileCount > 0
@@ -186,6 +186,29 @@ export default function QueueScreen() {
   }, [statusFeedback]);
 
   useEffect(() => {
+    if (!deleteArmedForFileId) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setDeleteArmedForFileId((armedFileId) => (armedFileId === deleteArmedForFileId ? null : armedFileId));
+    }, 4200);
+
+    return () => clearTimeout(timeoutId);
+  }, [deleteArmedForFileId]);
+
+  useEffect(() => {
+    if (!currentFile && deleteArmedForFileId) {
+      setDeleteArmedForFileId(null);
+      return;
+    }
+
+    if (currentFile && deleteArmedForFileId && deleteArmedForFileId !== currentFile.id) {
+      setDeleteArmedForFileId(null);
+    }
+  }, [currentFile, deleteArmedForFileId]);
+
+  useEffect(() => {
     const uris = [currentFile?.previewUri, ...nextItems.map((item) => item.previewUri)].filter(Boolean) as string[];
 
     uris.forEach((uri) => {
@@ -215,7 +238,7 @@ export default function QueueScreen() {
 
       setStatusFeedback({
         tone: 'success',
-        message: 'Photo access granted. FileSwipe is building the queue now.',
+        message: 'Photo access granted. YeetFiles is building the queue now.',
       });
     } finally {
       setIsCheckingPermission(false);
@@ -223,12 +246,12 @@ export default function QueueScreen() {
   };
 
   const confirmDelete = async () => {
+    setDeleteArmedForFileId(null);
     setStatusFeedback({
       tone: 'info',
       message: 'Deleting the current photo...',
     });
     const result = await deleteCurrent();
-    setDeleteSheetOpen(false);
 
     if (!result.ok) {
       setStatusFeedback({
@@ -242,6 +265,23 @@ export default function QueueScreen() {
     setStatusFeedback({
       tone: 'success',
       message: 'Photo deleted. Session stats are updated.',
+    });
+  };
+
+  const requestDelete = () => {
+    if (!currentFile || busy) {
+      return;
+    }
+
+    if (deleteArmed) {
+      void confirmDelete();
+      return;
+    }
+
+    setDeleteArmedForFileId(currentFile.id);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Delete armed. Tap Confirm delete within 4 seconds to remove this photo permanently.',
     });
   };
 
@@ -266,8 +306,7 @@ export default function QueueScreen() {
   };
 
   const handlePreviewDelete = () => {
-    setPreviewOpen(false);
-    setDeleteSheetOpen(true);
+    requestDelete();
   };
 
   const shareCurrent = async () => {
@@ -380,6 +419,7 @@ export default function QueueScreen() {
   };
 
   const handleUndo = () => {
+    setDeleteArmedForFileId(null);
     undoLastAction();
     triggerInteractionFeedback('undo', settings.hapticsEnabled);
     setStatusFeedback({
@@ -392,7 +432,7 @@ export default function QueueScreen() {
   const handleRescanRequest = () => {
     setStatusFeedback({
       tone: 'info',
-      message: 'Fresh scan queued. FileSwipe is rebuilding the queue in the background.',
+      message: 'Fresh scan queued. YeetFiles is rebuilding the queue in the background.',
     });
     requestRescan();
   };
@@ -535,19 +575,20 @@ export default function QueueScreen() {
                   showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
                   onPress={openPreview}
                   onKeepGesture={keepCurrent}
-                  onDeleteGesture={() => setDeleteSheetOpen(true)}
+                  onDeleteGesture={requestDelete}
                   onOpenSecondaryActions={openSecondaryActions}
                 />
               )}
             </View>
             {showTutorialCard ? null : (
               <ActionDock
-                onDelete={() => setDeleteSheetOpen(true)}
+                onDelete={requestDelete}
                 onKeep={keepCurrent}
                 onSkip={skipCurrent}
                 onUndo={topUndoEntry ? handleUndo : undefined}
                 undoCount={undoEntries.length}
                 disabled={busy}
+                deleteLabel={deleteArmed ? 'Confirm delete' : 'Delete'}
               />
             )}
           </>
@@ -604,25 +645,6 @@ export default function QueueScreen() {
         </View>
       ) : null}
 
-      <Sheet visible={deleteSheetOpen} onClose={() => setDeleteSheetOpen(false)}>
-        <Text style={[styles.sheetTitle, { color: colors.ink }]}>Delete this photo permanently?</Text>
-        <Text style={[styles.sheetBody, { color: colors.mutedInk }]}>
-          This action only runs after you confirm it. Your storage-freed score updates only if the delete actually succeeds.
-        </Text>
-        {currentFile ? (
-          <View style={[styles.sheetContext, { backgroundColor: colors.surfaceMuted }]}>
-            <Text style={[styles.sheetContextTitle, { color: colors.ink }]}>{currentFile.name}</Text>
-            <Text style={[styles.sheetContextBody, { color: colors.mutedInk }]}>
-              {formatCompactDate(currentFile.createdAt)} / {formatBytes(currentFile.sizeBytes)}
-            </Text>
-          </View>
-        ) : null}
-        <View style={styles.sheetActions}>
-          <Button label="Cancel" onPress={() => setDeleteSheetOpen(false)} variant="secondary" />
-          <Button label="Delete permanently" loading={isDeleting} loadingLabel="Deleting..." onPress={() => void confirmDelete()} variant="danger" disabled={busy && !isDeleting} />
-        </View>
-      </Sheet>
-
       <SecondaryActionsSheet
         visible={secondaryActionsOpen}
         fileName={currentFile?.name}
@@ -657,6 +679,7 @@ export default function QueueScreen() {
         visible={previewOpen}
         file={currentFile}
         isDeleting={isDeleting}
+        deleteArmed={deleteArmed}
         animationsEnabled={settings.animationsEnabled}
         soundEnabled={settings.soundEnabled}
         onClose={() => setPreviewOpen(false)}
@@ -810,30 +833,5 @@ const styles = StyleSheet.create({
   undoToastWrap: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
-  },
-  sheetTitle: {
-    fontFamily: typography.display,
-    fontSize: 28,
-  },
-  sheetBody: {
-    fontFamily: typography.body,
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  sheetContext: {
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: 4,
-  },
-  sheetContextTitle: {
-    fontFamily: typography.bold,
-    fontSize: 15,
-  },
-  sheetContextBody: {
-    fontFamily: typography.body,
-    fontSize: 14,
-  },
-  sheetActions: {
-    gap: spacing.sm,
   },
 });

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Increase decision speed and shareable momentum without turning FileSwipe into a black box.
+Increase decision speed and shareable momentum without turning YeetFiles into a black box.
 
 ## Stream 4A: Comparison view
 

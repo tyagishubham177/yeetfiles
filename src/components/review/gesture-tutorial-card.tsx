@@ -25,7 +25,7 @@ export function GestureTutorialCard({ onContinue }: GestureTutorialCardProps) {
       <Text style={[styles.title, { color: colors.white }]}>Three moves. No hidden tricks.</Text>
       <View style={styles.ruleList}>
         <Text style={[styles.rule, { color: colors.white }]}>Swipe right or tap `Keep` to hold onto a photo.</Text>
-        <Text style={[styles.rule, { color: colors.white }]}>Swipe left or tap `Delete` to open the permanent-delete confirmation.</Text>
+        <Text style={[styles.rule, { color: colors.white }]}>Swipe left or tap `Delete` to arm it, then tap `Confirm delete` to finish the permanent delete.</Text>
         <Text style={[styles.rule, { color: colors.white }]}>Use `Skip` when you want the photo to come back later.</Text>
       </View>
       <Text style={[styles.hint, { color: isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>

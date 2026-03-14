@@ -2,7 +2,7 @@
 
 ## Goal
 
-Prove that FileSwipe can deliver a fast, understandable, safe first loop on a real Android phone.
+Prove that YeetFiles can deliver a fast, understandable, safe first loop on a real Android phone.
 
 ## Core promise for this phase
 

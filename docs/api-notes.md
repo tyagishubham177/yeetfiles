@@ -1,4 +1,4 @@
-# FileSwipe API and Capability Notes
+# YeetFiles API and Capability Notes
 
 ## Purpose
 
@@ -70,7 +70,7 @@ Guidelines:
 
 Guidelines:
 
-- delete uses a confirmation sheet, not a staged `delete_candidate` state
+- delete uses an inline second-tap confirmation, not a staged `delete_candidate` state
 - post-delete undo must not be promised unless the platform can truly restore the file
 - keep and skip undo are safe to support early because they only reverse local review state
 

@@ -32,7 +32,7 @@ function buildDebugExportPayload(state: PersistedAppState): DebugExportPayload {
 
 function createExportFilename(): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  return `fileswipe-debug-${timestamp}.json`;
+  return `yeetfiles-debug-${timestamp}.json`;
 }
 
 export function exportDebugSnapshot(state: PersistedAppState): File {

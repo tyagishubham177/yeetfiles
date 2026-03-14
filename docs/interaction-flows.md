@@ -1,4 +1,4 @@
-# FileSwipe Interaction Flows
+# YeetFiles Interaction Flows
 
 ## Interaction model
 

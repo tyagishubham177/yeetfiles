@@ -1,4 +1,4 @@
-# FileSwipe Risk Register
+# YeetFiles Risk Register
 
 ## Purpose
 

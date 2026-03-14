@@ -3,9 +3,9 @@ import * as Notifications from 'expo-notifications';
 
 import type { NotificationPermissionState, SessionSummary } from '../../types/app-state';
 
-const FILESWIPE_NOTIFICATION_CHANNEL = 'fileswipe-reminders';
-const WEEKLY_SUMMARY_NOTIFICATION_ID = 'fileswipe-weekly-summary';
-const LOW_STORAGE_NOTIFICATION_ID = 'fileswipe-low-storage';
+const YEETFILES_NOTIFICATION_CHANNEL = 'yeetfiles-reminders';
+const WEEKLY_SUMMARY_NOTIFICATION_ID = 'yeetfiles-weekly-summary';
+const LOW_STORAGE_NOTIFICATION_ID = 'yeetfiles-low-storage';
 
 let handlerConfigured = false;
 
@@ -23,7 +23,7 @@ function toNotificationPermissionState(status: Notifications.NotificationPermiss
 
 function buildWeeklySummaryBody(summary: SessionSummary | null): string {
   if (!summary) {
-    return 'Open FileSwipe for a short cleanup pass and keep the queue moving.';
+    return 'Open YeetFiles for a short cleanup pass and keep the queue moving.';
   }
 
   if (summary.deletedCount > 0) {
@@ -56,8 +56,8 @@ export async function ensureNotificationChannelAsync() {
     return;
   }
 
-  await Notifications.setNotificationChannelAsync(FILESWIPE_NOTIFICATION_CHANNEL, {
-    name: 'FileSwipe reminders',
+  await Notifications.setNotificationChannelAsync(YEETFILES_NOTIFICATION_CHANNEL, {
+    name: 'YeetFiles reminders',
     importance: Notifications.AndroidImportance.DEFAULT,
     vibrationPattern: [0, 120],
     lightColor: '#3C91E6',
@@ -103,7 +103,7 @@ export async function syncWeeklySummaryNotificationAsync(enabled: boolean, summa
       weekday: 1,
       hour: 19,
       minute: 0,
-      channelId: FILESWIPE_NOTIFICATION_CHANNEL,
+      channelId: YEETFILES_NOTIFICATION_CHANNEL,
     },
   });
 }
@@ -115,7 +115,7 @@ export async function sendLowStorageNotificationAsync(freeBytes: number, thresho
     identifier: LOW_STORAGE_NOTIFICATION_ID,
     content: {
       title: 'Storage is getting tight',
-      body: `FileSwipe noticed about ${Math.round(freeBytes / (1024 * 1024))} MB free. A short cleanup pass can help before storage gets critical.`,
+      body: `YeetFiles noticed about ${Math.round(freeBytes / (1024 * 1024))} MB free. A short cleanup pass can help before storage gets critical.`,
       data: {
         kind: 'low-storage',
         freeBytes,

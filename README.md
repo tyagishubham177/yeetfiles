@@ -1,15 +1,15 @@
-# FileSwipe
+# YeetFiles
 
-`FileSwipe` is the working product name for an Android-first cleanup app built as a native mobile experience with React Native and Expo.
+`YeetFiles` is an Android-first cleanup app built as a native mobile experience with React Native and Expo.
 
 This repository is still docs-first, but the direction is now much sharper: get the user to their first swipe fast, keep the core loop simple, and make progress feel rewarding without weakening trust.
 
 ## Current status
 
 - Repo codename: `YeetFiles`
-- Product working name: `FileSwipe`
+- Product name: `YeetFiles`
 - Branching model: work happens on `codex/` branches into `main`
-- Current delivery target: Phase 3 scaling and re-scan
+- Current delivery target: Phase 5 lane expansion and launch polish
 - Primary platform: Android only
 
 ## Running On Android
@@ -37,7 +37,7 @@ Normal day-to-day run after the dev build is installed:
 npm run dev:tunnel
 ```
 
-Then open the installed `FileSwipe` app on the phone.
+Then open the installed `YeetFiles` app on the phone.
 
 If phone and laptop are on the same Wi-Fi, LAN is also available:
 
@@ -47,14 +47,14 @@ npm run lan
 
 Notes:
 
-- Use the installed `FileSwipe` dev app, not Expo Go
+- Use the installed `YeetFiles` dev app, not Expo Go
 - USB is not needed once the dev build is installed
 - Rebuild with `npm run dev:android:eas` only when native dependencies/config change
 - For JS-only changes, just restart the server and reopen/reload the dev app
 
-## What FileSwipe is trying to solve
+## What YeetFiles is trying to solve
 
-Most cleanup apps feel like chores because they ask the user to think like a file manager. FileSwipe should feel closer to a short game loop:
+Most cleanup apps feel like chores because they ask the user to think like a file manager. YeetFiles should feel closer to a short game loop:
 
 - show one photo at a time
 - offer two obvious primary actions: `Keep` or `Delete`
@@ -107,12 +107,12 @@ Start here:
 
 ## Near-term milestone
 
-Phase 3 should now focus on reliability across medium and large libraries:
+Phase 5 now focuses on launch polish and careful expansion:
 
-- re-scan photos without reintroducing already reviewed items
-- highlight newly added files since the last snapshot
-- keep queue performance steady on larger libraries
-- make interruption and resume behavior more resilient
+- validate the YeetFiles branding in real usage
+- remove modal delete friction without making delete feel casual
+- keep the photos lane crisp while planning a truthful future documents lane
+- tighten launch copy so speed and trust stay clearer than breadth
 
 ## Repo rule of thumb
 

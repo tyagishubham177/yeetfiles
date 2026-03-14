@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
-const STORAGE_KEY = "fileswipe-smoke-test-note";
+const STORAGE_KEY = "yeetfiles-smoke-test-note";
 
 export default function App() {
   const [tapCount, setTapCount] = useState(0);

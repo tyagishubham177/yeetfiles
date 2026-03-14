@@ -53,7 +53,7 @@ export function useAppHealthMonitor() {
         lastPromptedRef.current = 'shown';
         Alert.alert(
           'Storage is getting tight',
-          `FileSwipe only spotted about ${Math.round(storage.freeBytes / (1024 * 1024))} MB free on this device. A short cleanup pass can help before storage gets critical.`
+          `YeetFiles only spotted about ${Math.round(storage.freeBytes / (1024 * 1024))} MB free on this device. A short cleanup pass can help before storage gets critical.`
         );
       }
 
