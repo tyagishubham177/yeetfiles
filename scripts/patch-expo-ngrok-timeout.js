@@ -18,6 +18,22 @@ function patchFile(target, transform) {
   return true;
 }
 
+function replaceOnce(source, searchValue, replaceValue) {
+  if (source.includes(replaceValue)) {
+    return source;
+  }
+
+  return source.replace(searchValue, replaceValue);
+}
+
+function insertAfterOnce(source, anchor, addition) {
+  if (source.includes(addition)) {
+    return source;
+  }
+
+  return source.replace(anchor, `${anchor}${addition}`);
+}
+
 const cliAsyncNgrokTarget = path.join(
   process.cwd(),
   'node_modules',
@@ -67,33 +83,36 @@ let changed = false;
 
 changed =
   patchFile(cliAsyncNgrokTarget, (source) =>
-    source
-      .replace('const TUNNEL_TIMEOUT = 10 * 1000;', 'const TUNNEL_TIMEOUT = 45 * 1000;')
-      .replace(
-        'if ((0, _NgrokResolver.isNgrokClientError)(error) && error.body.error_code === 103) {',
-        'if ((0, _NgrokResolver.isNgrokClientError)(error) && (error == null ? void 0 : error.body) && error.body.error_code === 103) {'
-      )
+    replaceOnce(
+      replaceOnce(
+        source,
+        'const TUNNEL_TIMEOUT = 10 * 1000;',
+        'const TUNNEL_TIMEOUT = 45 * 1000;'
+      ),
+      'if ((0, _NgrokResolver.isNgrokClientError)(error) && error.body.error_code === 103) {',
+      'if ((0, _NgrokResolver.isNgrokClientError)(error) && (error == null ? void 0 : error.body) && error.body.error_code === 103) {'
+    )
   ) || changed;
 
 changed =
   patchFile(ngrokClientTarget, (source) =>
-    source
-      .replace(
+    replaceOnce(
+      replaceOnce(
+        replaceOnce(
+          replaceOnce(
+            source,
+            '        const response = JSON.parse(error.response.body);',
+            '        const responseBody = error && error.response ? error.response.body : undefined;\n        const response = JSON.parse(responseBody);'
+          ),
+          '          error.response.body,\n          error.response,\n          error.response.body',
+          '          responseBody ?? error.message,\n          error.response,\n          responseBody ?? error.message'
+        ),
         '        const response = JSON.parse(error.response.body);',
         '        const responseBody = error && error.response ? error.response.body : undefined;\n        const response = JSON.parse(responseBody);'
-      )
-      .replace(
-        '          error.response.body,\n          error.response,\n          error.response.body',
-        '          responseBody ?? error.message,\n          error.response,\n          responseBody ?? error.message'
-      )
-      .replace(
-        '      const response = JSON.parse(error.response.body);',
-        '      const responseBody = error && error.response ? error.response.body : undefined;\n      const response = JSON.parse(responseBody);'
-      )
-      .replace(
-        '      throw new NgrokClientError(response.msg, error.response, response);',
-        '      throw new NgrokClientError(response.msg, error.response, response);'
-      )
+      ),
+      '      const response = JSON.parse(error.response.body);',
+      '      const responseBody = error && error.response ? error.response.body : undefined;\n      const response = JSON.parse(responseBody);'
+    )
       .replace(
         '      } catch (e) {\n        clientError = new NgrokClientError(\n          responseBody ?? error.message,\n          error.response,\n          responseBody ?? error.message\n        );\n      }',
         '      } catch (e) {\n        clientError = new NgrokClientError(\n          responseBody ?? error.message,\n          error.response,\n          responseBody ?? error.message\n        );\n      }'
@@ -102,17 +121,26 @@ changed =
 
 changed =
   patchFile(ngrokUtilsTarget, (source) =>
-    source
-      .replace('  const body = err.body;', '  const body = err.body || {};')
-      .replace('  const notReady500 = statusCode === 500 && /panic/.test(body);', '  const notReady500 = statusCode === 500 && typeof body === "string" && /panic/.test(body);')
+    replaceOnce(
+      replaceOnce(source, '  const body = err.body;', '  const body = err.body || {};'),
+      '  const notReady500 = statusCode === 500 && /panic/.test(body);',
+      '  const notReady500 = statusCode === 500 && typeof body === "string" && /panic/.test(body);'
+    )
   ) || changed;
 
 changed =
-  patchFile(mediaLibraryModuleTarget, (source) =>
-    source
-      .replace('import android.provider.MediaStore\n', 'import android.provider.MediaStore\nimport android.provider.Settings\n')
-      .replace(
-        `    AsyncFunction("getPermissionsAsync") { writeOnly: Boolean, permissions: List<GranularPermission>?, promise: Promise ->
+  patchFile(mediaLibraryModuleTarget, (source) => {
+    let updated = source;
+
+    updated = replaceOnce(
+      updated,
+      'import android.provider.MediaStore\n',
+      'import android.provider.MediaStore\nimport android.provider.Settings\n'
+    );
+
+    updated = insertAfterOnce(
+      updated,
+      `    AsyncFunction("getPermissionsAsync") { writeOnly: Boolean, permissions: List<GranularPermission>?, promise: Promise ->
       val granularPermissions = permissions ?: allowedPermissionsList
       maybeThrowIfExpoGo(granularPermissions)
       getPermissionsWithPermissionsManager(
@@ -122,16 +150,7 @@ changed =
       )
     }
 `,
-        `    AsyncFunction("getPermissionsAsync") { writeOnly: Boolean, permissions: List<GranularPermission>?, promise: Promise ->
-      val granularPermissions = permissions ?: allowedPermissionsList
-      maybeThrowIfExpoGo(granularPermissions)
-      getPermissionsWithPermissionsManager(
-        appContext.permissions,
-        MediaLibraryPermissionPromiseWrapper(granularPermissions, promise, WeakReference(context)),
-        *getManifestPermissions(writeOnly, granularPermissions)
-      )
-    }
-
+      `
     AsyncFunction("canManageMediaAsync") {
       return@AsyncFunction if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         MediaStore.canManageMedia(context)
@@ -151,16 +170,26 @@ changed =
       context.startActivity(intent)
       return@AsyncFunction true
     }
+
+    AsyncFunction("deleteAssetsDirectAsync") Coroutine { assetsId: Array<String> ->
+      requireSystemPermissions()
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || !MediaStore.canManageMedia(context)) {
+        throw PermissionsException("Direct delete access is not enabled.")
+      }
+      return@Coroutine deleteAssets(context, assetsId)
+    }
 `
-      )
-      .replace(
-        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+    );
+
+    updated = replaceOnce(
+      updated,
+      `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       return
     }
 
     val uris = MediaLibraryUtils.getAssetsUris(context, assetIds)
 `,
-        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       return
     }
 
@@ -170,20 +199,29 @@ changed =
 
     val uris = MediaLibraryUtils.getAssetsUris(context, assetIds)
 `
-      )
-  ) || changed;
+    );
+
+    return updated;
+  }) || changed;
 
 changed =
-  patchFile(mediaStorePermissionsDelegateTarget, (source) =>
-    source
-      .replace('import android.os.Build\n', 'import android.os.Build\nimport android.provider.MediaStore\n')
-      .replace(
-        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+  patchFile(mediaStorePermissionsDelegateTarget, (source) => {
+    let updated = source;
+
+    updated = replaceOnce(
+      updated,
+      'import android.os.Build\n',
+      'import android.os.Build\nimport android.provider.MediaStore\n'
+    );
+
+    updated = replaceOnce(
+      updated,
+      `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       return
     }
     val urisWithoutPermission = uris.filterNot { uri ->
 `,
-        `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      `    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
       return
     }
     if (needsDeletePermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && MediaStore.canManageMedia(context)) {
@@ -191,8 +229,10 @@ changed =
     }
     val urisWithoutPermission = uris.filterNot { uri ->
 `
-      )
-  ) || changed;
+    );
+
+    return updated;
+  }) || changed;
 
 if (!changed) {
   console.log('Expo ngrok patch already applied.');

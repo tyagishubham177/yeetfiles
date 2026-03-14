@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
@@ -22,6 +22,7 @@ import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
+import { canManageMediaAsync, hasNativeDirectDeleteSupport, supportsManageMediaAccess } from '../../src/features/file-ops/manage-media-service';
 import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
@@ -98,6 +99,7 @@ export default function QueueScreen() {
   const [isCheckingPermission, setIsCheckingPermission] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
+  const [directDeleteStatus, setDirectDeleteStatus] = useState<'ready' | 'popup' | 'unavailable'>('unavailable');
 
   useEffect(() => {
     if (sessionSummary) {
@@ -190,6 +192,37 @@ export default function QueueScreen() {
       void Image.prefetch(uri).catch(() => null);
     });
   }, [currentFile?.previewUri, nextItems]);
+
+  useEffect(() => {
+    if (!supportsManageMediaAccess()) {
+      setDirectDeleteStatus('unavailable');
+      return;
+    }
+
+    let active = true;
+
+    const refreshDirectDeleteStatus = async () => {
+      const granted = await canManageMediaAsync();
+      if (!active) {
+        return;
+      }
+
+      setDirectDeleteStatus(granted && hasNativeDirectDeleteSupport() ? 'ready' : 'popup');
+    };
+
+    void refreshDirectDeleteStatus();
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void refreshDirectDeleteStatus();
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   const retryPermission = async () => {
     setIsCheckingPermission(true);
@@ -514,6 +547,43 @@ export default function QueueScreen() {
                 </Text>
               </View>
             ) : null}
+            {directDeleteStatus !== 'unavailable' ? (
+              <Pressable
+                android_disableSound={!settings.soundEnabled}
+                onPress={() => router.push(ROUTES.settings)}
+                style={({ pressed }) => [
+                  styles.directDeleteBanner,
+                  {
+                    backgroundColor:
+                      directDeleteStatus === 'ready'
+                        ? isNightMode
+                          ? 'rgba(76,151,232,0.14)'
+                          : 'rgba(60,145,230,0.18)'
+                        : isNightMode
+                          ? 'rgba(221,115,89,0.12)'
+                          : 'rgba(231,111,81,0.14)',
+                    borderColor:
+                      directDeleteStatus === 'ready'
+                        ? isNightMode
+                          ? 'rgba(76,151,232,0.24)'
+                          : 'rgba(60,145,230,0.28)'
+                        : isNightMode
+                          ? 'rgba(221,115,89,0.2)'
+                          : 'rgba(231,111,81,0.22)',
+                  },
+                  pressed && styles.linkPressed,
+                ]}
+              >
+                <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
+                  {directDeleteStatus === 'ready' ? 'Direct delete is active' : 'Android delete popup is still active'}
+                </Text>
+                <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+                  {directDeleteStatus === 'ready'
+                    ? 'Deletes should go straight through without the extra confirmation.'
+                    : 'Open Settings to check special access or confirm this build includes the native delete engine.'}
+                </Text>
+              </Pressable>
+            ) : null}
             {!rescanStatusLabel && lastRescanSummary ? (
               <View
                 style={[
@@ -731,6 +801,13 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 13,
     lineHeight: 20,
+  },
+  directDeleteBanner: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: 4,
   },
   cardWrap: {
     flex: 1,

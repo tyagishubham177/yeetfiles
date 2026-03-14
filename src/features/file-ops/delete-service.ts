@@ -1,5 +1,6 @@
 import * as MediaLibrary from 'expo-media-library';
 
+import { canManageMediaAsync, deleteAssetsDirectAsync, hasNativeDirectDeleteSupport } from './manage-media-service';
 import { nowIso } from '../../lib/time';
 import type { FileItem } from '../../types/file-item';
 
@@ -31,6 +32,13 @@ function normalizeDeleteError(error: unknown) {
     };
   }
 
+  if (normalizedMessage.includes('direct delete is unavailable')) {
+    return {
+      errorCode: 'direct_delete_unavailable',
+      message: 'Direct delete is not available in this installed build yet. Install the latest dev build and try again.',
+    };
+  }
+
   return {
     errorCode: 'delete_failed',
     message: error.message,
@@ -49,7 +57,16 @@ export async function deleteFileItem(file: FileItem): Promise<FileOpResult> {
   }
 
   try {
-    await MediaLibrary.deleteAssetsAsync([file.nativeAssetId]);
+    const canUseDirectDelete = hasNativeDirectDeleteSupport() && (await canManageMediaAsync());
+
+    if (canUseDirectDelete) {
+      const deleted = await deleteAssetsDirectAsync([file.nativeAssetId]);
+      if (!deleted) {
+        throw new Error('Direct delete is unavailable in this build.');
+      }
+    } else {
+      await MediaLibrary.deleteAssetsAsync([file.nativeAssetId]);
+    }
 
     return {
       ok: true,

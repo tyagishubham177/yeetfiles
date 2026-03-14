@@ -9,7 +9,12 @@ import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { exportDebugSnapshot } from '../../src/features/diagnostics/export-service';
-import { canManageMediaAsync, presentManageMediaPermissionPickerAsync, supportsManageMediaAccess } from '../../src/features/file-ops/manage-media-service';
+import {
+  canManageMediaAsync,
+  hasNativeDirectDeleteSupport,
+  presentManageMediaPermissionPickerAsync,
+  supportsManageMediaAccess,
+} from '../../src/features/file-ops/manage-media-service';
 import { requestNotificationPermissionStateAsync } from '../../src/features/notifications/notification-service';
 import { formatBytes, formatDateTime } from '../../src/lib/format';
 import { useAppTheme } from '../../src/lib/theme';
@@ -101,6 +106,34 @@ export default function SettingsScreen() {
   const [hasManageMediaAccess, setHasManageMediaAccess] = useState(false);
   const [busyNotificationKey, setBusyNotificationKey] = useState<'weeklySummaryNotificationsEnabled' | 'storageAlertsEnabled' | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
+  const nativeDirectDeleteReady = hasNativeDirectDeleteSupport();
+
+  const refreshManageMediaState = async (showFeedback = false) => {
+    if (!supportsManageMediaAccess()) {
+      return;
+    }
+
+    setIsCheckingManageMedia(true);
+
+    try {
+      const granted = await canManageMediaAsync();
+      setHasManageMediaAccess(granted);
+
+      if (showFeedback) {
+        setStatusFeedback({
+          tone: granted && nativeDirectDeleteReady ? 'success' : 'info',
+          message:
+            granted && nativeDirectDeleteReady
+              ? 'Direct delete is ready in this build.'
+              : granted
+                ? 'Access is granted, but this installed build is still missing the native direct-delete bridge.'
+                : 'Android confirmation popup is still active for deletes.',
+        });
+      }
+    } finally {
+      setIsCheckingManageMedia(false);
+    }
+  };
 
   useEffect(() => {
     if (!supportsManageMediaAccess()) {
@@ -109,18 +142,18 @@ export default function SettingsScreen() {
 
     let active = true;
 
-    const refreshManageMediaState = async () => {
+    const refreshManageMediaStateSilently = async () => {
       const granted = await canManageMediaAsync();
       if (active) {
         setHasManageMediaAccess(granted);
       }
     };
 
-    void refreshManageMediaState();
+    void refreshManageMediaStateSilently();
 
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        void refreshManageMediaState();
+        void refreshManageMediaStateSilently();
       }
     });
 
@@ -381,6 +414,9 @@ export default function SettingsScreen() {
             <Text style={[styles.sectionHint, { color: hasManageMediaAccess ? colors.progress : colors.mutedInk }]}>
               Status: {hasManageMediaAccess ? 'Direct delete access granted' : 'Still using Android confirmation popup'}
             </Text>
+            <Text style={[styles.sectionHint, { color: nativeDirectDeleteReady ? colors.progress : colors.mutedInk }]}>
+              Native delete engine: {nativeDirectDeleteReady ? 'Installed in this build' : 'Missing from this build'}
+            </Text>
             <Button
               label={hasManageMediaAccess ? 'Review direct delete access' : 'Enable direct delete'}
               variant="secondary"
@@ -388,9 +424,21 @@ export default function SettingsScreen() {
               loadingLabel="Opening Android settings..."
               onPress={() => void enableDirectDelete()}
             />
+            <Button
+              label="Refresh direct delete status"
+              variant="secondary"
+              loading={isCheckingManageMedia}
+              loadingLabel="Refreshing..."
+              onPress={() => void refreshManageMediaState(true)}
+            />
             <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
               This is Android special access, not the normal photo permission. After granting it once, YeetFiles should be able to delete without the per-photo popup.
             </Text>
+            {!nativeDirectDeleteReady ? (
+              <Text style={[styles.sectionHint, { color: colors.delete }]}>
+                This install does not include the native direct-delete bridge yet. A fresh dev build install is required because Fast Refresh cannot add native Android code.
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
