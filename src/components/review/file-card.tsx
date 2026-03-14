@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { Animated, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
@@ -9,7 +9,11 @@ import { useAppStore } from '../../store/app-store';
 import type { FileItem } from '../../types/file-item';
 
 const { width } = Dimensions.get('window');
-const SWIPE_THRESHOLD = width * 0.28;
+const SWIPE_TRIGGER_DISTANCE = Math.max(72, width * 0.18);
+const SWIPE_ESCAPE_DISTANCE = Math.max(32, width * 0.08);
+const SWIPE_VELOCITY_TRIGGER = 820;
+const SWIPE_VISUAL_LIMIT = width * 0.34;
+const SWIPE_COMPLETE_DISTANCE = width * 1.05;
 
 type FileCardProps = {
   current: FileItem | null;
@@ -37,69 +41,79 @@ function FileCardComponent({
   const { colors, isNightMode } = useAppTheme();
   const translateX = useRef(new Animated.Value(0)).current;
   const longPressTriggered = useRef(false);
+  const interactionLocked = useRef(false);
   const rotate = translateX.interpolate({
     inputRange: [-width, 0, width],
     outputRange: animationsEnabled ? ['-12deg', '0deg', '12deg'] : ['0deg', '0deg', '0deg'],
     extrapolate: 'clamp',
   });
 
-  const tintOpacity = translateX.interpolate({
-    inputRange: [-SWIPE_THRESHOLD, 0, SWIPE_THRESHOLD],
-    outputRange: [1, 0, 1],
+  const deleteTintOpacity = translateX.interpolate({
+    inputRange: [-SWIPE_VISUAL_LIMIT, -SWIPE_TRIGGER_DISTANCE, 0],
+    outputRange: [0.46, 0.26, 0],
     extrapolate: 'clamp',
   });
 
-  const tintColor = translateX.interpolate({
-    inputRange: [-SWIPE_THRESHOLD, 0, SWIPE_THRESHOLD],
-    outputRange: ['rgba(231,111,81,0.32)', 'rgba(0,0,0,0)', 'rgba(46,194,126,0.32)'],
+  const keepTintOpacity = translateX.interpolate({
+    inputRange: [0, SWIPE_TRIGGER_DISTANCE, SWIPE_VISUAL_LIMIT],
+    outputRange: [0, 0.26, 0.46],
     extrapolate: 'clamp',
   });
+
+  useEffect(() => {
+    translateX.stopAnimation();
+    translateX.setValue(0);
+    interactionLocked.current = false;
+    longPressTriggered.current = false;
+  }, [current?.id, translateX]);
+
+  const finishSwipe = (direction: 'left' | 'right', onComplete: () => void) => {
+    interactionLocked.current = true;
+
+    if (!animationsEnabled) {
+      translateX.setValue(0);
+      interactionLocked.current = false;
+      onComplete();
+      return;
+    }
+
+    Animated.timing(translateX, {
+      toValue: direction === 'left' ? -SWIPE_COMPLETE_DISTANCE : SWIPE_COMPLETE_DISTANCE,
+      duration: 170,
+      useNativeDriver: true,
+    }).start(() => {
+      translateX.setValue(0);
+      interactionLocked.current = false;
+      onComplete();
+    });
+  };
 
   const gesture = useMemo(
     () =>
       Gesture.Pan()
         .enabled(Boolean(current) && !disabled)
+        .activeOffsetX([-10, 10])
         .onUpdate((event) => {
-          translateX.setValue(event.translationX);
-        })
-        .onEnd((event) => {
-          if (event.translationX > SWIPE_THRESHOLD) {
-            if (!animationsEnabled) {
-              translateX.setValue(0);
-              onKeepGesture();
-              return;
-            }
-
-            Animated.timing(translateX, {
-              toValue: width * 1.05,
-              duration: 180,
-              useNativeDriver: true,
-            }).start(() => {
-              translateX.setValue(0);
-              onKeepGesture();
-            });
+          if (interactionLocked.current) {
             return;
           }
 
-          if (event.translationX < -SWIPE_THRESHOLD) {
-            if (!animationsEnabled) {
-              translateX.setValue(0);
-              onDeleteGesture();
-              return;
-            }
+          const clampedTranslation = Math.max(Math.min(event.translationX, SWIPE_VISUAL_LIMIT), -SWIPE_VISUAL_LIMIT);
+          translateX.setValue(clampedTranslation);
+        })
+        .onEnd((event) => {
+          if (interactionLocked.current) {
+            return;
+          }
 
-            Animated.sequence([
-              Animated.timing(translateX, {
-                toValue: -width * 0.25,
-                duration: 140,
-                useNativeDriver: true,
-              }),
-              Animated.spring(translateX, {
-                toValue: 0,
-                useNativeDriver: true,
-              }),
-            ]).start();
-            onDeleteGesture();
+          const absTranslationX = Math.abs(event.translationX);
+          const absVelocityX = Math.abs(event.velocityX);
+          const hasIntentionalVelocity = absTranslationX >= SWIPE_ESCAPE_DISTANCE && absVelocityX >= SWIPE_VELOCITY_TRIGGER;
+          const crossedTriggerDistance = absTranslationX >= SWIPE_TRIGGER_DISTANCE;
+
+          if (crossedTriggerDistance || hasIntentionalVelocity) {
+            const direction = event.translationX < 0 || (event.translationX === 0 && event.velocityX < 0) ? 'left' : 'right';
+            finishSwipe(direction, direction === 'left' ? onDeleteGesture : onKeepGesture);
             return;
           }
 
@@ -153,7 +167,8 @@ function FileCardComponent({
             style={styles.pressable}
           >
             <Image source={{ uri: current.previewUri }} style={styles.image} resizeMode="cover" />
-            <Animated.View pointerEvents="none" style={[styles.tint, { opacity: tintOpacity, backgroundColor: tintColor }]} />
+            <Animated.View pointerEvents="none" style={[styles.tint, styles.deleteTint, { opacity: deleteTintOpacity }]} />
+            <Animated.View pointerEvents="none" style={[styles.tint, styles.keepTint, { opacity: keepTintOpacity }]} />
             {onOpenSecondaryActions ? (
               <Pressable
                 accessibilityLabel="Open secondary actions"
@@ -183,7 +198,7 @@ function FileCardComponent({
                   {current.name}
                 </Text>
                 <Text style={[styles.fileMeta, { color: isNightMode ? 'rgba(245,247,250,0.68)' : 'rgba(249,250,251,0.76)' }]}>
-                  {formatCompactDate(current.createdAt)} · {formatBytes(current.sizeBytes)}
+                  {formatCompactDate(current.createdAt)} / {formatBytes(current.sizeBytes)}
                 </Text>
               </View>
               <Text style={[styles.bucket, { color: colors.white, backgroundColor: isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.12)' }]}>
@@ -245,6 +260,12 @@ const styles = StyleSheet.create({
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
+  },
+  deleteTint: {
+    backgroundColor: 'rgba(231,111,81,0.56)',
+  },
+  keepTint: {
+    backgroundColor: 'rgba(46,194,126,0.56)',
   },
   overflowButton: {
     position: 'absolute',

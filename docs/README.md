@@ -1,10 +1,10 @@
-# FileSwipe Docs Index
+# YeetFiles Docs Index
 
-This folder is the project source of truth for FileSwipe while the app is being shaped.
+This folder is the project source of truth for YeetFiles while the app is being shaped.
 
 ## Why this docs set exists
 
-FileSwipe sounds simple, but its quality depends on getting a few first principles right:
+YeetFiles sounds simple, but its quality depends on getting a few first principles right:
 
 - file cleanup must feel fast enough to start
 - destructive actions must feel safe enough to trust
@@ -48,8 +48,7 @@ These docs now reflect a tighter product stance: fewer gates, fewer core actions
 
 ## Glossary
 
-- `FileSwipe`: the product name used in UI and product planning
-- `YeetFiles`: the repository codename only
+- `YeetFiles`: the shared product and repository name
 - `lane`: a future high-level content area such as photos or documents
 - `photos lane`: the only user-facing lane in V1
 - `bucket`: a lightweight category used for faster cleanup, such as screenshots, camera, or downloads

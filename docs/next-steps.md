@@ -1,4 +1,4 @@
-# FileSwipe Next Steps
+# YeetFiles Next Steps
 
 ## Immediate next milestone
 

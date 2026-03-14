@@ -6,7 +6,7 @@ Turn the feasibility loop into a short-session product people would plausibly wa
 
 ## Success shape
 
-By the end of Phase 1, FileSwipe should feel physical, rewarding, and forgiving without losing trust.
+By the end of Phase 1, YeetFiles should feel physical, rewarding, and forgiving without losing trust.
 
 ## Stream 1A: Undo and reversibility
 

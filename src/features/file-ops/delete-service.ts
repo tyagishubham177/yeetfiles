@@ -1,11 +1,49 @@
 import * as MediaLibrary from 'expo-media-library';
 
+import { canManageMediaAsync, deleteAssetsDirectAsync, hasNativeDirectDeleteSupport } from './manage-media-service';
 import { nowIso } from '../../lib/time';
 import type { FileItem } from '../../types/file-item';
 
 export type FileOpResult =
   | { ok: true; action: 'delete'; fileId: string; timestamp: string }
   | { ok: false; action: 'delete'; fileId: string; errorCode: string; message: string };
+
+function normalizeDeleteError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return {
+      errorCode: 'delete_failed',
+      message: 'The delete request failed.',
+    };
+  }
+
+  const normalizedMessage = error.message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("didn't grant write permission") ||
+    normalizedMessage.includes('did not grant write permission') ||
+    normalizedMessage.includes('user cancelled') ||
+    normalizedMessage.includes('user canceled') ||
+    normalizedMessage.includes('cancelled') ||
+    normalizedMessage.includes('canceled')
+  ) {
+    return {
+      errorCode: 'delete_cancelled',
+      message: 'Delete was cancelled in the system confirmation.',
+    };
+  }
+
+  if (normalizedMessage.includes('direct delete is unavailable')) {
+    return {
+      errorCode: 'direct_delete_unavailable',
+      message: 'Direct delete is not available in this installed build yet. Install the latest dev build and try again.',
+    };
+  }
+
+  return {
+    errorCode: 'delete_failed',
+    message: error.message,
+  };
+}
 
 export async function deleteFileItem(file: FileItem): Promise<FileOpResult> {
   if (!file.nativeAssetId) {
@@ -19,7 +57,16 @@ export async function deleteFileItem(file: FileItem): Promise<FileOpResult> {
   }
 
   try {
-    await MediaLibrary.deleteAssetsAsync([file.nativeAssetId]);
+    const canUseDirectDelete = hasNativeDirectDeleteSupport() && (await canManageMediaAsync());
+
+    if (canUseDirectDelete) {
+      const deleted = await deleteAssetsDirectAsync([file.nativeAssetId]);
+      if (!deleted) {
+        throw new Error('Direct delete is unavailable in this build.');
+      }
+    } else {
+      await MediaLibrary.deleteAssetsAsync([file.nativeAssetId]);
+    }
 
     return {
       ok: true,
@@ -28,12 +75,14 @@ export async function deleteFileItem(file: FileItem): Promise<FileOpResult> {
       timestamp: nowIso(),
     };
   } catch (error) {
+    const normalizedError = normalizeDeleteError(error);
+
     return {
       ok: false,
       action: 'delete',
       fileId: file.id,
-      errorCode: 'delete_failed',
-      message: error instanceof Error ? error.message : 'The delete request failed.',
+      errorCode: normalizedError.errorCode,
+      message: normalizedError.message,
     };
   }
 }

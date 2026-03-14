@@ -1,8 +1,8 @@
-# FileSwipe Data Model
+# YeetFiles Data Model
 
 ## Purpose
 
-This document defines the persisted shapes needed to keep FileSwipe trustworthy as scans, resumes, reminders, and queue review all evolve together.
+This document defines the persisted shapes needed to keep YeetFiles trustworthy as scans, resumes, reminders, and queue review all evolve together.
 
 ## Model design goals
 

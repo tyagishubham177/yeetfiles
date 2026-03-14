@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppLogo } from '../src/components/branding/app-logo';
 import { StatusBanner } from '../src/components/feedback/status-banner';
 import { Button } from '../src/components/ui/button';
 import { ROUTES } from '../src/constants/routes';
@@ -49,7 +50,7 @@ export default function WelcomeScreen() {
       setPermissionState(permissionState);
 
       if (permissionState === 'blocked') {
-        setLaunchMessage('Photo access is blocked, so FileSwipe will guide you to settings next.');
+        setLaunchMessage('Photo access is blocked, so YeetFiles will guide you to settings next.');
         Alert.alert('Media permission blocked', MEDIA_PERMISSION_BLOCKED_HELP);
       } else {
         setLaunchMessage('Fresh session ready. Taking you into the queue...');
@@ -68,7 +69,10 @@ export default function WelcomeScreen() {
         <View style={styles.heroWrap}>
           <View style={[styles.heroOrbA, { backgroundColor: isDark ? 'rgba(217,162,59,0.16)' : 'rgba(243,180,63,0.28)' }]} />
           <View style={[styles.heroOrbB, { backgroundColor: isDark ? 'rgba(97,168,244,0.14)' : 'rgba(60,145,230,0.18)' }]} />
-          <Text style={[styles.brand, { color: colors.ink }]}>FileSwipe</Text>
+          <View style={styles.logoWrap}>
+            <AppLogo size={76} />
+          </View>
+          <Text style={[styles.brand, { color: colors.ink }]}>YeetFiles</Text>
           <Text style={[styles.title, { color: colors.ink }]}>Short cleanup sessions should feel like momentum, not admin.</Text>
           <Text style={[styles.subtitle, { color: colors.mutedInk }]}>
             Pick a session length, start with one card, and keep every delete honest.
@@ -81,7 +85,7 @@ export default function WelcomeScreen() {
           {lowStorageWarning ? (
             <View style={[styles.warningCard, { backgroundColor: isDark ? 'rgba(240,130,105,0.1)' : '#FFF0EA', borderColor: isDark ? 'rgba(240,130,105,0.16)' : '#F4C7B9' }]}>
               <Text style={[styles.warningTitle, { color: colors.ink }]}>Storage is getting tight</Text>
-              <Text style={[styles.warningBody, { color: colors.mutedInk }]}>Only about {formatBytes(lowStorageWarning.freeBytes)} free right now. FileSwipe can help you clear space before Android starts feeling cramped.</Text>
+              <Text style={[styles.warningBody, { color: colors.mutedInk }]}>Only about {formatBytes(lowStorageWarning.freeBytes)} free right now. YeetFiles can help you clear space before Android starts feeling cramped.</Text>
             </View>
           ) : null}
           <View style={styles.sessionChoiceRow}>
@@ -175,6 +179,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textTransform: 'uppercase',
     letterSpacing: 1.1,
+  },
+  logoWrap: {
+    marginBottom: spacing.xs,
   },
   title: {
     fontFamily: typography.display,

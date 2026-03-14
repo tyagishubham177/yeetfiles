@@ -1,8 +1,8 @@
-# FileSwipe Technical Architecture
+# YeetFiles Technical Architecture
 
 ## Architecture stance
 
-FileSwipe is Android-first, local-first, speed-to-first-swipe aware, and capability-aware.
+YeetFiles is Android-first, local-first, speed-to-first-swipe aware, and capability-aware.
 
 That stance means:
 

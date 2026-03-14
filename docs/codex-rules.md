@@ -1,4 +1,4 @@
-# FileSwipe Codex Rules
+# YeetFiles Codex Rules
 
 ## Non-negotiable build rules
 

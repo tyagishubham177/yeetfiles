@@ -107,7 +107,7 @@ export function PhotoPreviewModal({
                       style={styles.actionButton}
                     />
                   </View>
-                  <Text style={styles.actionHint}>The queue will stay in the same place until you take an action.</Text>
+                  <Text style={styles.actionHint}>Delete may use Android confirmation unless direct delete access is enabled in Settings.</Text>
                   <Text style={styles.zoomHint}>Pinch to zoom and drag when zoomed in.</Text>
                 </View>
               </ScrollView>

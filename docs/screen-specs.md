@@ -1,4 +1,4 @@
-# FileSwipe Screen Specifications
+# YeetFiles Screen Specifications
 
 ## Purpose
 
@@ -99,7 +99,7 @@ Let the user inspect the current photo more closely without losing queue context
 - returning keeps the same active card
 - avoid turning preview into a secondary editing workflow in V1
 
-## 4. Delete confirmation sheet
+## 4. System delete confirmation
 
 ### Goal
 
@@ -107,15 +107,13 @@ Protect the user from accidental permanent deletion without adding unnecessary c
 
 ### Must include
 
-- small thumbnail or file context
-- clear, factual consequence copy
-- `Cancel` action placed before `Delete permanently`
-- visible loading state if delete execution takes time
+- clear, factual copy that the system may ask for final confirmation
+- visible feedback while the delete request is in flight
 
 ### Rules
 
 - no `delete candidate` language
-- cancel produces no state change
+- cancelling the system confirmation produces no state change
 - success and failure both return visible feedback
 - copy should feel calm, not alarming
 

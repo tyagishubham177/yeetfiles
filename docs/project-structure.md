@@ -1,4 +1,4 @@
-# FileSwipe Planned Project Structure
+# YeetFiles Planned Project Structure
 
 ## Purpose
 

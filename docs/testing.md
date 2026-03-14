@@ -1,4 +1,4 @@
-# FileSwipe Testing Strategy
+# YeetFiles Testing Strategy
 
 ## Testing philosophy
 
@@ -133,13 +133,13 @@ Expected:
 ## Scenario E: delete safety
 
 1. Attempt to delete a photo.
-2. Cancel the confirmation sheet.
+2. Cancel the system delete confirmation.
 3. Attempt delete again and confirm.
 4. Trigger a failure case if possible.
 
 Expected:
 
-- cancel does not change status
+- cancelling the system delete confirmation does not change status
 - successful delete updates storage-freed score
 - failed delete does not claim success
 

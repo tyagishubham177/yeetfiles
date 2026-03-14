@@ -1,4 +1,4 @@
-# FileSwipe Development Workflow
+# YeetFiles Development Workflow
 
 ## Purpose
 

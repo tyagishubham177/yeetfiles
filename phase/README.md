@@ -1,4 +1,4 @@
-# FileSwipe Phase Playbooks
+# YeetFiles Phase Playbooks
 
 These files turn the high-level roadmap into execution-ready phase guides. [docs/phase-plan.md](../docs/phase-plan.md) remains the summary roadmap. The `phase/` folder is where each phase gets its detailed streams, bifurcations, verification gates, and exit checks.
 
@@ -72,9 +72,9 @@ These requirements should not wait until the end:
 
 ## Strategic decision gates to revisit
 
-- universal delete confirmation versus tiered confirmation by file risk
+- whether the system delete confirmation is enough friction on short sessions
 - fixed `Quick 10` versus adaptive quick-session targets like 10, 25, and 50
 - oldest-first versus smart `most deletable first` ordering
 - when to migrate from persisted queue arrays to a cursor model
 - whether notifications improve return behavior enough to justify their complexity
-- whether `FileSwipe` remains the right product name before a public launch
+- whether `YeetFiles` keeps testing well with real users before a public launch

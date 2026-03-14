@@ -46,7 +46,7 @@ function Get-ExpoArgs {
 
 for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
   Write-Host ""
-  Write-Host "[FileSwipe] Startup attempt $attempt/$MaxAttempts ($HostMode)"
+  Write-Host "[YeetFiles] Startup attempt $attempt/$MaxAttempts ($HostMode)"
 
   Invoke-ProjectCommand -FilePath 'powershell' -Arguments @('-ExecutionPolicy', 'Bypass', '-File', '.\scripts\free-expo-port.ps1') | Out-Null
   Invoke-ProjectCommand -FilePath 'node' -Arguments @('.\scripts\patch-expo-ngrok-timeout.js') | Out-Null
@@ -68,9 +68,9 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
 
   if (-not $canRetry) {
     Write-Host ""
-    Write-Host "[FileSwipe] Expo start exited with code $exitCode after $([math]::Round($stopwatch.Elapsed.TotalSeconds, 1))s."
+    Write-Host "[YeetFiles] Expo start exited with code $exitCode after $([math]::Round($stopwatch.Elapsed.TotalSeconds, 1))s."
     if ($HostMode -eq 'tunnel') {
-      Write-Host "[FileSwipe] Tunnel stayed unstable. If your phone is on the same Wi-Fi, use: npm run dev:lan"
+      Write-Host "[YeetFiles] Tunnel stayed unstable. If your phone is on the same Wi-Fi, use: npm run dev:lan"
     }
     exit $exitCode
   }

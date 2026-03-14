@@ -6,6 +6,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppLogo } from '../src/components/branding/app-logo';
 import { ErrorView } from '../src/components/feedback/error-view';
 import { typography } from '../src/constants/ui-tokens';
 import { useAppHealthMonitor } from '../src/hooks/use-app-health-monitor';
@@ -34,7 +35,8 @@ export default function RootLayout() {
   if (!fontsLoaded || !hasHydrated) {
     return (
       <View style={[styles.bootWrap, { backgroundColor: colors.canvas }]}>
-        <Text style={[styles.bootTitle, { color: colors.ink }]}>FileSwipe</Text>
+        <AppLogo size={72} />
+        <Text style={[styles.bootTitle, { color: colors.ink }]}>YeetFiles</Text>
         <Text style={[styles.bootBody, { color: colors.mutedInk }]}>Loading your cleanup workspace...</Text>
       </View>
     );

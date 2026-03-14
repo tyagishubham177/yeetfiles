@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StatusBanner } from '../../src/components/feedback/status-banner';
@@ -9,6 +9,12 @@ import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { exportDebugSnapshot } from '../../src/features/diagnostics/export-service';
+import {
+  canManageMediaAsync,
+  hasNativeDirectDeleteSupport,
+  presentManageMediaPermissionPickerAsync,
+  supportsManageMediaAccess,
+} from '../../src/features/file-ops/manage-media-service';
 import { requestNotificationPermissionStateAsync } from '../../src/features/notifications/notification-service';
 import { formatBytes, formatDateTime } from '../../src/lib/format';
 import { useAppTheme } from '../../src/lib/theme';
@@ -96,8 +102,66 @@ export default function SettingsScreen() {
   const resetOnboarding = useAppStore((state) => state.resetOnboarding);
   const resetApp = useAppStore((state) => state.resetApp);
   const [isExporting, setIsExporting] = useState(false);
+  const [isCheckingManageMedia, setIsCheckingManageMedia] = useState(false);
+  const [hasManageMediaAccess, setHasManageMediaAccess] = useState(false);
   const [busyNotificationKey, setBusyNotificationKey] = useState<'weeklySummaryNotificationsEnabled' | 'storageAlertsEnabled' | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
+  const nativeDirectDeleteReady = hasNativeDirectDeleteSupport();
+
+  const refreshManageMediaState = async (showFeedback = false) => {
+    if (!supportsManageMediaAccess()) {
+      return;
+    }
+
+    setIsCheckingManageMedia(true);
+
+    try {
+      const granted = await canManageMediaAsync();
+      setHasManageMediaAccess(granted);
+
+      if (showFeedback) {
+        setStatusFeedback({
+          tone: granted && nativeDirectDeleteReady ? 'success' : 'info',
+          message:
+            granted && nativeDirectDeleteReady
+              ? 'Direct delete is ready in this build.'
+              : granted
+                ? 'Access is granted, but this installed build is still missing the native direct-delete bridge.'
+                : 'Android confirmation popup is still active for deletes.',
+        });
+      }
+    } finally {
+      setIsCheckingManageMedia(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!supportsManageMediaAccess()) {
+      return;
+    }
+
+    let active = true;
+
+    const refreshManageMediaStateSilently = async () => {
+      const granted = await canManageMediaAsync();
+      if (active) {
+        setHasManageMediaAccess(granted);
+      }
+    };
+
+    void refreshManageMediaStateSilently();
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void refreshManageMediaStateSilently();
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!statusFeedback) {
@@ -157,8 +221,8 @@ export default function SettingsScreen() {
       const exportFile = exportDebugSnapshot(persistedState as PersistedAppState);
 
       await Share.share({
-        title: 'FileSwipe debug export',
-        message: 'FileSwipe local debug export',
+        title: 'YeetFiles debug export',
+        message: 'YeetFiles local debug export',
         url: exportFile.uri,
       });
       setStatusFeedback({
@@ -206,8 +270,8 @@ export default function SettingsScreen() {
       Alert.alert(
         'Notifications are still off',
         permissionState === 'blocked'
-          ? 'FileSwipe cannot schedule reminders until notifications are allowed in system settings.'
-          : 'FileSwipe only turns reminders on after Android notification permission is granted.'
+          ? 'YeetFiles cannot schedule reminders until notifications are allowed in system settings.'
+          : 'YeetFiles only turns reminders on after Android notification permission is granted.'
       );
       setBusyNotificationKey(null);
       return;
@@ -219,6 +283,39 @@ export default function SettingsScreen() {
       message: key === 'weeklySummaryNotificationsEnabled' ? 'Weekly reminder turned on.' : 'Low-storage alerts turned on.',
     });
     setBusyNotificationKey(null);
+  };
+
+  const enableDirectDelete = async () => {
+    if (!supportsManageMediaAccess()) {
+      Alert.alert('Android 12+ only', 'Direct delete without the system popup needs Android 12 or newer.');
+      return;
+    }
+
+    setIsCheckingManageMedia(true);
+    setStatusFeedback({
+      tone: 'info',
+      message: 'Opening Android media access so YeetFiles can delete without the extra popup...',
+    });
+
+    try {
+      const launched = await presentManageMediaPermissionPickerAsync();
+
+      if (!launched) {
+        setStatusFeedback({
+          tone: 'error',
+          message: 'We could not open the Android media access screen.',
+        });
+        Alert.alert('Open failed', 'We could not open the Android media access screen.');
+        return;
+      }
+
+      setStatusFeedback({
+        tone: 'info',
+        message: 'Grant the Android media access permission, then come back here.',
+      });
+    } finally {
+      setIsCheckingManageMedia(false);
+    }
   };
 
   return (
@@ -284,7 +381,7 @@ export default function SettingsScreen() {
             onPress={() => {
               setStatusFeedback({
                 tone: 'info',
-                message: 'Fresh queue requested. FileSwipe will scan in the background.',
+                message: 'Fresh queue requested. YeetFiles will scan in the background.',
               });
               requestRescan();
               router.replace(ROUTES.queue);
@@ -307,6 +404,43 @@ export default function SettingsScreen() {
             }}
           />
         </View>
+
+        {supportsManageMediaAccess() ? (
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <Text style={[styles.sectionTitle, { color: colors.ink }]}>Direct delete</Text>
+            <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
+              Android 12+ can grant YeetFiles special media-management access so photo deletes stop showing the extra system confirmation every time.
+            </Text>
+            <Text style={[styles.sectionHint, { color: hasManageMediaAccess ? colors.progress : colors.mutedInk }]}>
+              Status: {hasManageMediaAccess ? 'Direct delete access granted' : 'Still using Android confirmation popup'}
+            </Text>
+            <Text style={[styles.sectionHint, { color: nativeDirectDeleteReady ? colors.progress : colors.mutedInk }]}>
+              Native delete engine: {nativeDirectDeleteReady ? 'Installed in this build' : 'Missing from this build'}
+            </Text>
+            <Button
+              label={hasManageMediaAccess ? 'Review direct delete access' : 'Enable direct delete'}
+              variant="secondary"
+              loading={isCheckingManageMedia}
+              loadingLabel="Opening Android settings..."
+              onPress={() => void enableDirectDelete()}
+            />
+            <Button
+              label="Refresh direct delete status"
+              variant="secondary"
+              loading={isCheckingManageMedia}
+              loadingLabel="Refreshing..."
+              onPress={() => void refreshManageMediaState(true)}
+            />
+            <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
+              This is Android special access, not the normal photo permission. After granting it once, YeetFiles should be able to delete without the per-photo popup.
+            </Text>
+            {!nativeDirectDeleteReady ? (
+              <Text style={[styles.sectionHint, { color: colors.delete }]}>
+                This install does not include the native direct-delete bridge yet. A fresh dev build install is required because Fast Refresh cannot add native Android code.
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Debug and diagnostics</Text>

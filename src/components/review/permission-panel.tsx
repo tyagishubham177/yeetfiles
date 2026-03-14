@@ -18,7 +18,7 @@ export function PermissionPanel({ blocked, isRetrying = false, onRetry, onOpenSe
     <View style={[styles.wrap, { backgroundColor: colors.cardGlass, borderColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.09)' }]}>
       <Text style={[styles.title, { color: colors.white }]}>Photos permission is needed</Text>
       <Text style={[styles.body, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' }]}>
-        FileSwipe stays local and only reviews your photos on-device. Without access, we cannot build the queue.
+        YeetFiles stays local and only reviews your photos on-device. Without access, we cannot build the queue.
       </Text>
       {blocked ? (
         <Text style={[styles.note, { color: isNightMode ? '#F2C3B8' : '#FFD7C7' }]}>

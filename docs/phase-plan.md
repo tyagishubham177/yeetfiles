@@ -1,4 +1,4 @@
-# FileSwipe Phase Plan
+# YeetFiles Phase Plan
 
 ## Planning principle
 
@@ -10,7 +10,7 @@ Detailed execution playbooks now live in [../phase/README.md](D:/Coding%20Projec
 
 ### Goal
 
-Prove that FileSwipe can deliver a fast, understandable, rewarding first loop on a real Android phone.
+Prove that YeetFiles can deliver a fast, understandable, rewarding first loop on a real Android phone.
 
 ### Scope
 

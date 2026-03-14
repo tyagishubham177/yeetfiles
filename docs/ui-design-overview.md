@@ -1,4 +1,4 @@
-# FileSwipe UI Design Overview
+# YeetFiles UI Design Overview
 
 ## UI goals
 
