@@ -98,6 +98,9 @@ const UNDO_WINDOW_MS = 5000;
 const UNDO_BUFFER_LIMIT = 10;
 const MILESTONE_COUNTS = [5, 25, 50, 100];
 const BASE_FILTER_ORDER: FilterType[] = ['all', 'screenshots', 'camera', 'downloads'];
+let cachedFilterChipQueueOrder: string[] | null = null;
+let cachedFilterChipFilesById: Record<string, FileItem> | null = null;
+let cachedFilterChips: FilterChip[] = [];
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -894,6 +897,10 @@ export function getFilterLabel(filter: FilterType): string {
 }
 
 export function selectFilterChips(state: AppStore): FilterChip[] {
+  if (cachedFilterChipQueueOrder === state.queueOrder && cachedFilterChipFilesById === state.filesById) {
+    return cachedFilterChips;
+  }
+
   const baseCounts: Record<'all' | BucketType, number> = {
     all: 0,
     screenshots: 0,
@@ -962,7 +969,11 @@ export function selectFilterChips(state: AppStore): FilterChip[] {
     });
   }
 
-  return [...chips, ...folderChips];
+  cachedFilterChipQueueOrder = state.queueOrder;
+  cachedFilterChipFilesById = state.filesById;
+  cachedFilterChips = [...chips, ...folderChips];
+
+  return cachedFilterChips;
 }
 
 export function getActiveFilterLabel(state: Pick<AppStore, 'activeFilter' | 'filesById' | 'queueOrder'>): string {
