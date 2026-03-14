@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { colors, typography } from '../../constants/ui-tokens';
+import { typography } from '../../constants/ui-tokens';
+import { useAppTheme } from '../../lib/theme';
 
 type ProgressRingProps = {
   progress: number;
@@ -9,6 +10,7 @@ type ProgressRingProps = {
 };
 
 export function ProgressRing({ progress, reviewedCount }: ProgressRingProps) {
+  const { colors, isNightMode } = useAppTheme();
   const size = 82;
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
@@ -23,7 +25,7 @@ export function ProgressRing({ progress, reviewedCount }: ProgressRingProps) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="rgba(255,255,255,0.12)"
+          stroke={isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.12)'}
           strokeWidth={strokeWidth}
           fill="transparent"
         />
@@ -43,8 +45,8 @@ export function ProgressRing({ progress, reviewedCount }: ProgressRingProps) {
         />
       </Svg>
       <View style={styles.labelWrap}>
-        <Text style={styles.value}>{reviewedCount}</Text>
-        <Text style={styles.label}>done</Text>
+        <Text style={[styles.value, { color: colors.white }]}>{reviewedCount}</Text>
+        <Text style={[styles.label, { color: isNightMode ? 'rgba(245,247,250,0.7)' : 'rgba(249,250,251,0.78)' }]}>done</Text>
       </View>
     </View>
   );
@@ -60,12 +62,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   value: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 22,
   },
   label: {
-    color: 'rgba(249,250,251,0.78)',
     fontFamily: typography.medium,
     fontSize: 11,
     textTransform: 'uppercase',

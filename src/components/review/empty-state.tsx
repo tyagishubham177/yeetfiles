@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, spacing, typography } from '../../constants/ui-tokens';
+import { spacing, typography } from '../../constants/ui-tokens';
+import { useAppTheme } from '../../lib/theme';
 import { Button } from '../ui/button';
 
 type EmptyStateProps = {
@@ -11,10 +12,12 @@ type EmptyStateProps = {
 };
 
 export function EmptyState({ title, body, actionLabel, onAction }: EmptyStateProps) {
+  const { colors, isNightMode } = useAppTheme();
+
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.body}>{body}</Text>
+      <Text style={[styles.title, { color: colors.white }]}>{title}</Text>
+      <Text style={[styles.body, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' }]}>{body}</Text>
       {actionLabel && onAction ? <Button label={actionLabel} onPress={onAction} variant="secondary" /> : null}
     </View>
   );
@@ -29,13 +32,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   title: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 28,
     textAlign: 'center',
   },
   body: {
-    color: 'rgba(249,250,251,0.82)',
     fontFamily: typography.body,
     fontSize: 16,
     lineHeight: 24,

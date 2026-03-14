@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
+import { radius, spacing, typography } from '../../constants/ui-tokens';
+import { useAppTheme } from '../../lib/theme';
 import type { MoveTarget } from '../../types/app-state';
 import { Button } from '../ui/button';
 import { Sheet } from '../ui/sheet';
@@ -34,21 +35,23 @@ export function MoveDestinationSheet({
   onSelectTarget,
   onConfirmMove,
 }: MoveDestinationSheetProps) {
+  const { colors, isDark } = useAppTheme();
+
   return (
     <Sheet visible={visible} onClose={onClose}>
-      <Text style={styles.title}>Move photo</Text>
-      <Text style={styles.body}>Pick an existing gallery album or create a new one, then confirm the move explicitly.</Text>
+      <Text style={[styles.title, { color: colors.ink }]}>Move photo</Text>
+      <Text style={[styles.body, { color: colors.mutedInk }]}>Pick an existing gallery album or create a new one, then confirm the move explicitly.</Text>
 
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Selected destination</Text>
-        <View style={styles.targetCard}>
-          <Text style={styles.targetValue}>{selectedTarget?.label ?? 'No album selected yet'}</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedInk }]}>Selected destination</Text>
+        <View style={[styles.targetCard, { backgroundColor: colors.surfaceMuted }]}>
+          <Text style={[styles.targetValue, { color: colors.ink }]}>{selectedTarget?.label ?? 'No album selected yet'}</Text>
         </View>
       </View>
 
       {recentTargets.length > 0 ? (
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Recent albums</Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedInk }]}>Recent albums</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
             {recentTargets.map((target) => {
               const selected = selectedTarget?.albumId
@@ -60,9 +63,15 @@ export function MoveDestinationSheet({
                   key={`${target.albumId ?? 'new'}-${target.albumName}`}
                   accessibilityRole="button"
                   onPress={() => onSelectTarget(target)}
-                  style={[styles.chip, selected && styles.chipSelected]}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: selected ? colors.ink : colors.surfaceMuted,
+                      borderColor: selected ? colors.ink : isDark ? colors.outline : 'transparent',
+                    },
+                  ]}
                 >
-                  <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{target.label}</Text>
+                  <Text style={[styles.chipLabel, { color: selected ? colors.white : colors.ink }]}>{target.label}</Text>
                 </Pressable>
               );
             })}
@@ -71,9 +80,9 @@ export function MoveDestinationSheet({
       ) : null}
 
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Existing albums</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedInk }]}>Existing albums</Text>
         {isLoadingTargets ? (
-          <Text style={styles.helperText}>Loading albums from the media library...</Text>
+          <Text style={[styles.helperText, { color: colors.mutedInk }]}>Loading albums from the media library...</Text>
         ) : (
           <ScrollView style={styles.targetList} contentContainerStyle={styles.targetListContent}>
             {availableTargets.map((target) => {
@@ -84,9 +93,15 @@ export function MoveDestinationSheet({
                   key={target.albumId ?? target.albumName}
                   accessibilityRole="button"
                   onPress={() => onSelectTarget(target)}
-                  style={[styles.targetOption, selected && styles.targetOptionSelected]}
+                  style={[
+                    styles.targetOption,
+                    {
+                      backgroundColor: selected ? colors.ink : colors.surfaceMuted,
+                      borderColor: selected ? colors.ink : isDark ? colors.outline : 'transparent',
+                    },
+                  ]}
                 >
-                  <Text style={[styles.targetOptionLabel, selected && styles.targetOptionLabelSelected]}>{target.label}</Text>
+                  <Text style={[styles.targetOptionLabel, { color: selected ? colors.white : colors.ink }]}>{target.label}</Text>
                 </Pressable>
               );
             })}
@@ -95,13 +110,13 @@ export function MoveDestinationSheet({
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Or create a new album</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedInk }]}>Or create a new album</Text>
         <TextInput
           placeholder="New album name"
-          placeholderTextColor="#8792A2"
+          placeholderTextColor={colors.mutedInk}
           value={pendingAlbumName}
           onChangeText={onPendingAlbumNameChange}
-          style={styles.input}
+          style={[styles.input, { backgroundColor: colors.surfaceMuted, color: colors.ink }]}
         />
         <Button
           label="Use new album"
@@ -117,7 +132,7 @@ export function MoveDestinationSheet({
         />
       </View>
 
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+      {errorMessage ? <Text style={[styles.errorText, { color: colors.delete }]}>{errorMessage}</Text> : null}
 
       <View style={styles.actions}>
         <Button label="Back" onPress={onClose} variant="ghost" />
@@ -129,12 +144,10 @@ export function MoveDestinationSheet({
 
 const styles = StyleSheet.create({
   title: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 28,
   },
   body: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 15,
     lineHeight: 22,
@@ -143,7 +156,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   sectionLabel: {
-    color: colors.mutedInk,
     fontFamily: typography.medium,
     fontSize: 12,
     textTransform: 'uppercase',
@@ -151,11 +163,9 @@ const styles = StyleSheet.create({
   },
   targetCard: {
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
     padding: spacing.md,
   },
   targetValue: {
-    color: colors.ink,
     fontFamily: typography.bold,
     fontSize: 15,
   },
@@ -165,20 +175,13 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  chipSelected: {
-    backgroundColor: '#101418',
-  },
   chipLabel: {
-    color: colors.ink,
     fontFamily: typography.medium,
     fontSize: 13,
-  },
-  chipLabelSelected: {
-    color: colors.white,
   },
   targetList: {
     maxHeight: 180,
@@ -188,37 +191,26 @@ const styles = StyleSheet.create({
   },
   targetOption: {
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
     padding: spacing.md,
   },
-  targetOptionSelected: {
-    backgroundColor: '#101418',
-  },
   targetOptionLabel: {
-    color: colors.ink,
     fontFamily: typography.medium,
     fontSize: 14,
   },
-  targetOptionLabelSelected: {
-    color: colors.white,
-  },
   helperText: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 14,
     lineHeight: 21,
   },
   input: {
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-    color: colors.ink,
     fontFamily: typography.body,
     fontSize: 15,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
   },
   errorText: {
-    color: colors.delete,
     fontFamily: typography.medium,
     fontSize: 14,
     lineHeight: 21,

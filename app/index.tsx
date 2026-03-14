@@ -5,9 +5,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../src/components/ui/button';
 import { ROUTES } from '../src/constants/routes';
-import { colors, radius, spacing, typography } from '../src/constants/ui-tokens';
+import { radius, spacing, typography } from '../src/constants/ui-tokens';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../src/features/permissions/permission-service';
 import { formatBytes, formatDuration } from '../src/lib/format';
+import { useAppTheme } from '../src/lib/theme';
 import { getQuickSessionLabel, selectResumeAvailable, useAppStore } from '../src/store/app-store';
 import type { QuickSessionTarget } from '../src/types/file-item';
 
@@ -15,8 +16,10 @@ const SESSION_OPTIONS: QuickSessionTarget[] = [10, 25, 50];
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const resumeAvailable = useAppStore(selectResumeAvailable);
   const currentFileId = useAppStore((state) => state.currentFileId);
+  const lowStorageWarning = useAppStore((state) => state.lowStorageWarning);
   const beginQuickSession = useAppStore((state) => state.beginQuickSession);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const setPermissionState = useAppStore((state) => state.setPermissionState);
@@ -34,7 +37,7 @@ export default function WelcomeScreen() {
 
     try {
       if (resetProgress && !currentFileId) {
-        requestRescan();
+        requestRescan({ resetSession: true });
       }
 
       beginQuickSession(nextTarget, resetProgress);
@@ -53,21 +56,27 @@ export default function WelcomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroWrap}>
-          <View style={styles.heroOrbA} />
-          <View style={styles.heroOrbB} />
-          <Text style={styles.brand}>FileSwipe</Text>
-          <Text style={styles.title}>Short cleanup sessions should feel like momentum, not admin.</Text>
-          <Text style={styles.subtitle}>
+          <View style={[styles.heroOrbA, { backgroundColor: isDark ? 'rgba(217,162,59,0.16)' : 'rgba(243,180,63,0.28)' }]} />
+          <View style={[styles.heroOrbB, { backgroundColor: isDark ? 'rgba(97,168,244,0.14)' : 'rgba(60,145,230,0.18)' }]} />
+          <Text style={[styles.brand, { color: colors.ink }]}>FileSwipe</Text>
+          <Text style={[styles.title, { color: colors.ink }]}>Short cleanup sessions should feel like momentum, not admin.</Text>
+          <Text style={[styles.subtitle, { color: colors.mutedInk }]}>
             Pick a session length, start with one card, and keep every delete honest.
           </Text>
         </View>
 
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>{hasCompletedOnboarding ? 'Return for another pass' : 'Choose your quick session'}</Text>
-          <Text style={styles.panelBody}>Photos only. Local only. Undo stays honest by covering safe review actions only.</Text>
+        <View style={[styles.panel, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+          <Text style={[styles.panelTitle, { color: colors.ink }]}>{hasCompletedOnboarding ? 'Return for another pass' : 'Choose your quick session'}</Text>
+          <Text style={[styles.panelBody, { color: colors.mutedInk }]}>Photos only. Local only. Undo stays honest by covering safe review actions only.</Text>
+          {lowStorageWarning ? (
+            <View style={[styles.warningCard, { backgroundColor: isDark ? 'rgba(240,130,105,0.1)' : '#FFF0EA', borderColor: isDark ? 'rgba(240,130,105,0.16)' : '#F4C7B9' }]}>
+              <Text style={[styles.warningTitle, { color: colors.ink }]}>Storage is getting tight</Text>
+              <Text style={[styles.warningBody, { color: colors.mutedInk }]}>Only about {formatBytes(lowStorageWarning.freeBytes)} free right now. FileSwipe can help you clear space before Android starts feeling cramped.</Text>
+            </View>
+          ) : null}
           <View style={styles.sessionChoiceRow}>
             {SESSION_OPTIONS.map((option) => {
               const selected = option === selectedTarget;
@@ -77,10 +86,16 @@ export default function WelcomeScreen() {
                   key={option}
                   accessibilityRole="button"
                   onPress={() => setSelectedTarget(option)}
-                  style={[styles.sessionChip, selected && styles.sessionChipSelected]}
+                  style={[
+                    styles.sessionChip,
+                    {
+                      backgroundColor: selected ? colors.ink : colors.surfaceMuted,
+                      borderColor: selected ? colors.ink : isDark ? colors.outline : 'transparent',
+                    },
+                  ]}
                 >
-                  <Text style={[styles.sessionChipLabel, selected && styles.sessionChipLabelSelected]}>{getQuickSessionLabel(option)}</Text>
-                  <Text style={[styles.sessionChipSubtle, selected && styles.sessionChipSubtleSelected]}>
+                  <Text style={[styles.sessionChipLabel, { color: selected ? colors.white : colors.ink }]}>{getQuickSessionLabel(option)}</Text>
+                  <Text style={[styles.sessionChipSubtle, { color: selected ? 'rgba(249,250,251,0.72)' : colors.mutedInk }]}>
                     {option === 10 ? '2 min' : option === 25 ? '5 min' : '10 min'}
                   </Text>
                 </Pressable>
@@ -88,12 +103,12 @@ export default function WelcomeScreen() {
             })}
           </View>
           {sessionSummary ? (
-            <View style={styles.lastSession}>
-              <Text style={styles.lastSessionTitle}>Last pass</Text>
-              <Text style={styles.lastSessionBody}>
+            <View style={[styles.lastSession, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.lastSessionTitle, { color: colors.ink }]}>Last pass</Text>
+              <Text style={[styles.lastSessionBody, { color: colors.mutedInk }]}>
                 {sessionSummary.reviewedCount} reviewed / {formatBytes(sessionSummary.storageFreedBytes)} freed / {formatDuration(sessionSummary.durationMs)}
               </Text>
-              {lastCompletedScanAt ? <Text style={styles.lastSessionHint}>Queue refreshed recently, so you can jump back in fast.</Text> : null}
+              {lastCompletedScanAt ? <Text style={[styles.lastSessionHint, { color: colors.mutedInk }]}>Queue refreshed recently, so you can jump back in fast.</Text> : null}
             </View>
           ) : null}
           <View style={styles.actionStack}>
@@ -102,9 +117,9 @@ export default function WelcomeScreen() {
               <Button label={`Resume ${getQuickSessionLabel((targetCount as QuickSessionTarget | null) ?? selectedTarget)}`} onPress={() => void goToQueue(false, selectedTarget)} variant="secondary" disabled={busy} />
             ) : null}
           </View>
-          <View style={styles.trustNote}>
-            <Text style={styles.trustTitle}>Trust note</Text>
-            <Text style={styles.trustBody}>No cloud upload. No silent deletes. Queue, filters, and your quick-session target come back after restart.</Text>
+          <View style={[styles.trustNote, { borderTopColor: colors.outline }]}>
+            <Text style={[styles.trustTitle, { color: colors.ink }]}>Trust note</Text>
+            <Text style={[styles.trustBody, { color: colors.mutedInk }]}>No cloud upload. No silent deletes. Queue, filters, and your quick-session target come back after restart.</Text>
           </View>
         </View>
       </ScrollView>
@@ -115,7 +130,6 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
@@ -135,7 +149,6 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: 70,
-    backgroundColor: 'rgba(243,180,63,0.28)',
   },
   heroOrbB: {
     position: 'absolute',
@@ -144,32 +157,28 @@ const styles = StyleSheet.create({
     width: 110,
     height: 110,
     borderRadius: 55,
-    backgroundColor: 'rgba(60,145,230,0.18)',
   },
   brand: {
-    color: colors.ink,
     fontFamily: typography.medium,
     fontSize: 15,
     textTransform: 'uppercase',
     letterSpacing: 1.1,
   },
   title: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 44,
     lineHeight: 50,
     maxWidth: '92%',
   },
   subtitle: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 18,
     lineHeight: 28,
     maxWidth: '92%',
   },
   panel: {
-    backgroundColor: colors.surface,
     borderRadius: radius.lg,
+    borderWidth: 1,
     padding: spacing.xl,
     gap: spacing.md,
     shadowColor: '#08111D',
@@ -179,15 +188,28 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   panelTitle: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 28,
   },
   panelBody: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 16,
     lineHeight: 24,
+  },
+  warningCard: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: 4,
+  },
+  warningTitle: {
+    fontFamily: typography.bold,
+    fontSize: 15,
+  },
+  warningBody: {
+    fontFamily: typography.body,
+    fontSize: 14,
+    lineHeight: 22,
   },
   sessionChoiceRow: {
     flexDirection: 'row',
@@ -196,49 +218,34 @@ const styles = StyleSheet.create({
   sessionChip: {
     flex: 1,
     borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
     padding: spacing.md,
     gap: 4,
   },
-  sessionChipSelected: {
-    backgroundColor: '#101418',
-  },
   sessionChipLabel: {
-    color: colors.ink,
     fontFamily: typography.bold,
     fontSize: 16,
   },
-  sessionChipLabelSelected: {
-    color: colors.white,
-  },
   sessionChipSubtle: {
-    color: colors.mutedInk,
     fontFamily: typography.medium,
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  sessionChipSubtleSelected: {
-    color: 'rgba(249,250,251,0.72)',
-  },
   lastSession: {
-    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
     padding: spacing.md,
     gap: 4,
   },
   lastSessionTitle: {
-    color: colors.ink,
     fontFamily: typography.bold,
     fontSize: 14,
   },
   lastSessionBody: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 14,
   },
   lastSessionHint: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 13,
     lineHeight: 20,
@@ -249,18 +256,15 @@ const styles = StyleSheet.create({
   },
   trustNote: {
     borderTopWidth: 1,
-    borderTopColor: colors.outline,
     paddingTop: spacing.md,
     gap: 4,
   },
   trustTitle: {
-    color: colors.ink,
     fontFamily: typography.bold,
     fontSize: 13,
     textTransform: 'uppercase',
   },
   trustBody: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 14,
     lineHeight: 22,

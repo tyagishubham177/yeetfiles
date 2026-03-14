@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
 
-import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
+import { radius, spacing, typography } from '../../constants/ui-tokens';
+import { useAppTheme } from '../../lib/theme';
 import { useAppStore } from '../../store/app-store';
 
 type ButtonProps = {
@@ -22,6 +23,7 @@ export function Button({
 }: ButtonProps) {
   const soundEnabled = useAppStore((state) => state.settings.soundEnabled);
   const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
+  const { colors, isDark } = useAppTheme();
 
   return (
     <Pressable
@@ -32,9 +34,9 @@ export function Button({
       style={({ pressed }) => [
         styles.base,
         compact && styles.compact,
-        variant === 'primary' && styles.primary,
-        variant === 'secondary' && styles.secondary,
-        variant === 'danger' && styles.danger,
+        variant === 'primary' && { backgroundColor: colors.ink },
+        variant === 'secondary' && { backgroundColor: colors.surfaceMuted },
+        variant === 'danger' && { backgroundColor: colors.delete },
         variant === 'ghost' && styles.ghost,
         pressed && !disabled && animationsEnabled && styles.pressed,
         disabled && styles.disabled,
@@ -44,9 +46,8 @@ export function Button({
       <Text
         style={[
           styles.label,
-          variant === 'secondary' && styles.secondaryLabel,
-          variant === 'danger' && styles.primaryLabel,
-          variant === 'ghost' && styles.ghostLabel,
+          { color: variant === 'secondary' || variant === 'ghost' ? colors.ink : colors.white },
+          variant === 'ghost' && isDark && { color: colors.progress },
         ]}
       >
         {label}
@@ -67,15 +68,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: spacing.md,
   },
-  primary: {
-    backgroundColor: colors.ink,
-  },
-  secondary: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  danger: {
-    backgroundColor: colors.delete,
-  },
   ghost: {
     backgroundColor: 'transparent',
   },
@@ -87,17 +79,7 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   label: {
-    color: colors.white,
     fontFamily: typography.bold,
     fontSize: 16,
-  },
-  primaryLabel: {
-    color: colors.white,
-  },
-  secondaryLabel: {
-    color: colors.ink,
-  },
-  ghostLabel: {
-    color: colors.ink,
   },
 });

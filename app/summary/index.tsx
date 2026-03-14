@@ -6,15 +6,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { UndoToast } from '../../src/components/review/undo-toast';
 import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
-import { colors, radius, spacing, typography } from '../../src/constants/ui-tokens';
+import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
 import { formatBytes, formatDuration } from '../../src/lib/format';
-import { getQuickSessionLabel, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
+import { useAppTheme } from '../../src/lib/theme';
+import { getQuickSessionLabel, selectNewSinceLastScanCount, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
 
 export default function SummaryScreen() {
   const router = useRouter();
+  const { colors, isDark } = useAppTheme();
   const summary = useAppStore((state) => state.sessionSummary);
   const currentFileId = useAppStore((state) => state.currentFileId);
+  const scanState = useAppStore((state) => state.scanState);
+  const scanMode = useAppStore((state) => state.scanMode);
+  const lastRescanSummary = useAppStore((state) => state.lastRescanSummary);
+  const newSinceLastScanCount = useAppStore(selectNewSinceLastScanCount);
   const beginQuickSession = useAppStore((state) => state.beginQuickSession);
   const requestRescan = useAppStore((state) => state.requestRescan);
   const dismissSummary = useAppStore((state) => state.dismissSummary);
@@ -45,7 +51,7 @@ export default function SummaryScreen() {
     if (currentFileId) {
       beginQuickSession((summary.targetCount as 10 | 25 | 50 | null) ?? 10, true);
     } else {
-      requestRescan();
+      requestRescan({ resetSession: true });
     }
 
     router.replace(ROUTES.queue);
@@ -53,7 +59,7 @@ export default function SummaryScreen() {
 
   const restartGame = () => {
     dismissSummary();
-    requestRescan();
+    requestRescan({ resetSession: true });
     router.replace(ROUTES.queue);
   };
 
@@ -64,54 +70,67 @@ export default function SummaryScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.banner}>
-          <Text style={styles.eyebrow}>{getQuickSessionLabel((summary.targetCount as 10 | 25 | 50 | null) ?? 10)} complete</Text>
-          <Text style={styles.title}>{summary.reviewedCount} decisions made</Text>
-          <Text style={styles.subtitle}>{paceCopy}</Text>
-          <View style={styles.heroStat}>
+          <Text style={[styles.eyebrow, { color: colors.progress }]}>{getQuickSessionLabel((summary.targetCount as 10 | 25 | 50 | null) ?? 10)} complete</Text>
+          <Text style={[styles.title, { color: colors.ink }]}>{summary.reviewedCount} decisions made</Text>
+          <Text style={[styles.subtitle, { color: colors.mutedInk }]}>{paceCopy}</Text>
+          <View style={[styles.heroStat, { backgroundColor: isDark ? colors.stageCard : '#101418' }]}>
             <Text style={styles.heroStatLabel}>Storage recovered</Text>
-            <Text style={styles.heroStatValue}>{formatBytes(summary.storageFreedBytes)}</Text>
+            <Text style={[styles.heroStatValue, { color: colors.white }]}>{formatBytes(summary.storageFreedBytes)}</Text>
           </View>
         </View>
 
         <View style={styles.grid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Time</Text>
-            <Text style={styles.statValue}>{formatDuration(summary.durationMs)}</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Time</Text>
+            <Text style={[styles.statValue, { color: colors.ink }]}>{formatDuration(summary.durationMs)}</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Kept</Text>
-            <Text style={styles.statValue}>{summary.keptCount}</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Kept</Text>
+            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.keptCount}</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Deleted</Text>
-            <Text style={styles.statValue}>{summary.deletedCount}</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Deleted</Text>
+            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.deletedCount}</Text>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Moved</Text>
-            <Text style={styles.statValue}>{summary.movedCount}</Text>
+          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Moved</Text>
+            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.movedCount}</Text>
           </View>
-          <View style={styles.statCardWide}>
-            <Text style={styles.statLabel}>Skipped for later</Text>
-            <Text style={styles.statValue}>{summary.skippedCount}</Text>
+          <View style={[styles.statCardWide, { backgroundColor: isDark ? colors.surfaceMuted : '#EAF2FA' }]}>
+            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Skipped for later</Text>
+            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.skippedCount}</Text>
           </View>
         </View>
 
         <View style={styles.actions}>
           <Button label="Continue cleaning" onPress={continueCleaning} />
-          <Button label="Start fresh scan" onPress={restartGame} variant="secondary" />
+          <Button
+            label={scanState === 'scanning' && scanMode === 'rescan' ? 'Re-scanning photos...' : 'Check for new photos'}
+            onPress={restartGame}
+            variant="secondary"
+            disabled={scanState === 'scanning' && scanMode === 'rescan'}
+          />
           <Button label="Back to welcome" onPress={() => router.replace(ROUTES.welcome)} variant="ghost" />
         </View>
 
-        {topUndoEntry ? (
-          <UndoToast
-            entry={topUndoEntry}
-            onUndo={handleUndo}
-            tone="light"
-          />
-        ) : null}
+        <View style={[styles.rescanCard, { backgroundColor: isDark ? colors.surfaceMuted : '#EEF4FB' }]}>
+          <Text style={[styles.rescanTitle, { color: colors.ink }]}>Re-scan lane</Text>
+          <Text style={[styles.rescanBody, { color: colors.ink }]}>
+            {newSinceLastScanCount > 0
+              ? `${newSinceLastScanCount} photo${newSinceLastScanCount === 1 ? '' : 's'} are still marked new since the last scan.`
+              : 'Check the library again after you add new photos outside the app.'}
+          </Text>
+          {lastRescanSummary ? (
+            <Text style={[styles.rescanHint, { color: colors.mutedInk }]}>
+              Last re-scan added {lastRescanSummary.newFileCount} new and kept {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} out of the queue.
+            </Text>
+          ) : null}
+        </View>
+
+        {topUndoEntry ? <UndoToast entry={topUndoEntry} onUndo={handleUndo} tone="light" /> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -120,7 +139,6 @@ export default function SummaryScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
@@ -134,27 +152,23 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   eyebrow: {
-    color: colors.progress,
     fontFamily: typography.medium,
     fontSize: 14,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   title: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 42,
     lineHeight: 48,
   },
   subtitle: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 17,
     lineHeight: 26,
   },
   heroStat: {
     borderRadius: radius.lg,
-    backgroundColor: '#101418',
     padding: spacing.lg,
     gap: 6,
   },
@@ -166,7 +180,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   heroStatValue: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 36,
   },
@@ -175,28 +188,45 @@ const styles = StyleSheet.create({
   },
   statCard: {
     borderRadius: radius.lg,
-    backgroundColor: colors.surface,
+    borderWidth: 1,
     padding: spacing.lg,
     gap: 6,
   },
   statCardWide: {
     borderRadius: radius.lg,
-    backgroundColor: '#EAF2FA',
     padding: spacing.lg,
     gap: 6,
   },
   statLabel: {
-    color: colors.mutedInk,
     fontFamily: typography.medium,
     fontSize: 13,
     textTransform: 'uppercase',
   },
   statValue: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 28,
   },
   actions: {
     gap: spacing.sm,
+  },
+  rescanCard: {
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: 6,
+  },
+  rescanTitle: {
+    fontFamily: typography.bold,
+    fontSize: 15,
+    textTransform: 'uppercase',
+  },
+  rescanBody: {
+    fontFamily: typography.body,
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  rescanHint: {
+    fontFamily: typography.body,
+    fontSize: 14,
+    lineHeight: 22,
   },
 });

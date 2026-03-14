@@ -2,8 +2,9 @@ import { memo, useMemo, useRef } from 'react';
 import { Animated, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
-import { colors, radius, shadows, spacing, typography } from '../../constants/ui-tokens';
+import { radius, shadows, spacing, typography } from '../../constants/ui-tokens';
 import { formatBytes, formatCompactDate } from '../../lib/format';
+import { useAppTheme } from '../../lib/theme';
 import { useAppStore } from '../../store/app-store';
 import type { FileItem } from '../../types/file-item';
 
@@ -33,6 +34,7 @@ function FileCardComponent({
 }: FileCardProps) {
   const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
   const soundEnabled = useAppStore((state) => state.settings.soundEnabled);
+  const { colors, isNightMode } = useAppTheme();
   const translateX = useRef(new Animated.Value(0)).current;
   const longPressTriggered = useRef(false);
   const rotate = translateX.interpolate({
@@ -115,19 +117,21 @@ function FileCardComponent({
   );
 
   if (!current) {
-    return <View style={styles.placeholder} />;
+    return <View style={[styles.placeholder, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)' }]} />;
   }
 
   return (
     <View style={styles.stackWrap}>
       {nextItems.slice(0, 2).reverse().map((item, index) => (
-        <View key={item.id} style={[styles.peekCard, index === 0 ? styles.peekBack : styles.peekFront]}>
+        <View key={item.id} style={[styles.peekCard, { backgroundColor: colors.stageCard }, index === 0 ? styles.peekBack : styles.peekFront]}>
           <Image source={{ uri: item.previewUri }} style={styles.peekImage} resizeMode="cover" />
         </View>
       ))}
       <GestureDetector gesture={gesture}>
-        <Animated.View style={[styles.card, { transform: [{ translateX }, { rotate }] }]}>
+        <Animated.View style={[styles.card, { backgroundColor: colors.stageCard, transform: [{ translateX }, { rotate }] }]}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${current.name}, ${current.bucketType}, ${current.isNewSinceLastScan ? 'new since last scan, ' : ''}tap for preview`}
             android_disableSound={!soundEnabled}
             delayLongPress={280}
             onLongPress={
@@ -157,9 +161,9 @@ function FileCardComponent({
                 android_disableSound={!soundEnabled}
                 hitSlop={10}
                 onPress={onOpenSecondaryActions}
-                style={styles.overflowButton}
+                style={[styles.overflowButton, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.72)' : 'rgba(8,12,20,0.58)' }]}
               >
-                <Text style={styles.overflowButtonLabel}>More</Text>
+                <Text style={[styles.overflowButtonLabel, { color: colors.white }]}>More</Text>
               </Pressable>
             ) : null}
             {showHints ? (
@@ -168,16 +172,23 @@ function FileCardComponent({
                 <Text style={styles.hintRight}>Keep</Text>
               </View>
             ) : null}
-            <View style={styles.metaStrip}>
+            {current.isNewSinceLastScan ? (
+              <View style={[styles.newBadge, { backgroundColor: isNightMode ? 'rgba(217,162,59,0.82)' : 'rgba(243,180,63,0.9)' }]}>
+                <Text style={styles.newBadgeLabel}>New since last scan</Text>
+              </View>
+            ) : null}
+            <View style={[styles.metaStrip, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.62)' : 'rgba(8,12,20,0.55)' }]}>
               <View style={styles.metaTextWrap}>
-                <Text style={styles.fileName} numberOfLines={1}>
+                <Text style={[styles.fileName, { color: colors.white }]} numberOfLines={1}>
                   {current.name}
                 </Text>
-                <Text style={styles.fileMeta}>
+                <Text style={[styles.fileMeta, { color: isNightMode ? 'rgba(245,247,250,0.68)' : 'rgba(249,250,251,0.76)' }]}>
                   {formatCompactDate(current.createdAt)} · {formatBytes(current.sizeBytes)}
                 </Text>
               </View>
-              <Text style={styles.bucket}>{current.bucketType}</Text>
+              <Text style={[styles.bucket, { color: colors.white, backgroundColor: isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.12)' }]}>
+                {current.bucketType}
+              </Text>
             </View>
           </Pressable>
         </Animated.View>
@@ -206,7 +217,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: radius.lg,
     overflow: 'hidden',
-    backgroundColor: colors.stageCard,
   },
   peekBack: {
     transform: [{ scale: 0.92 }, { translateY: 26 }],
@@ -224,7 +234,6 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: radius.lg,
     overflow: 'hidden',
-    backgroundColor: colors.stageCard,
     ...(shadows.card as object),
   },
   pressable: {
@@ -247,7 +256,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   overflowButtonLabel: {
-    color: colors.white,
     fontFamily: typography.bold,
     fontSize: 12,
     letterSpacing: 0.6,
@@ -279,6 +287,22 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
   },
+  newBadge: {
+    position: 'absolute',
+    top: 56,
+    left: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(243,180,63,0.9)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  newBadgeLabel: {
+    color: '#101418',
+    fontFamily: typography.bold,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
   metaStrip: {
     position: 'absolute',
     left: spacing.md,
@@ -295,21 +319,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fileName: {
-    color: colors.white,
     fontFamily: typography.bold,
     fontSize: 16,
   },
   fileMeta: {
-    color: 'rgba(249,250,251,0.76)',
     fontFamily: typography.body,
     fontSize: 13,
   },
   bucket: {
-    color: colors.white,
     fontFamily: typography.medium,
     fontSize: 12,
     textTransform: 'capitalize',
-    backgroundColor: 'rgba(255,255,255,0.12)',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,

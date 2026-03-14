@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, spacing, typography } from '../../constants/ui-tokens';
+import { spacing, typography } from '../../constants/ui-tokens';
+import { useAppTheme } from '../../lib/theme';
 import { Button } from '../ui/button';
 
 type ErrorViewProps = {
@@ -9,10 +10,12 @@ type ErrorViewProps = {
 };
 
 export function ErrorView({ message, onRetry }: ErrorViewProps) {
+  const { colors } = useAppTheme();
+
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.title}>Something broke mid-swipe</Text>
-      <Text style={styles.body}>{message ?? 'A recoverable error interrupted the session.'}</Text>
+    <View style={[styles.wrap, { backgroundColor: colors.canvas }]}>
+      <Text style={[styles.title, { color: colors.ink }]}>Something broke mid-swipe</Text>
+      <Text style={[styles.body, { color: colors.mutedInk }]}>{message ?? 'A recoverable error interrupted the session.'}</Text>
       <Button label="Try again" onPress={onRetry} />
     </View>
   );
@@ -21,18 +24,15 @@ export function ErrorView({ message, onRetry }: ErrorViewProps) {
 const styles = StyleSheet.create({
   wrap: {
     flex: 1,
-    backgroundColor: colors.canvas,
     justifyContent: 'center',
     padding: spacing.xl,
     gap: spacing.md,
   },
   title: {
-    color: colors.ink,
     fontFamily: typography.display,
     fontSize: 32,
   },
   body: {
-    color: colors.mutedInk,
     fontFamily: typography.body,
     fontSize: 16,
     lineHeight: 24,

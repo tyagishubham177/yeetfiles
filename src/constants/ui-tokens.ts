@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-export const colors = {
+export const lightColors = {
   canvas: '#F7F4ED',
   ink: '#101418',
   mutedInk: '#5E6875',
@@ -21,6 +21,52 @@ export const colors = {
   white: '#FFFFFF',
   dangerText: '#7A1F12',
 } as const;
+
+export const darkColors = {
+  canvas: '#0E131B',
+  ink: '#F4F7FB',
+  mutedInk: '#AAB4C0',
+  stage: '#070B12',
+  stageCard: '#101826',
+  surface: '#151C27',
+  surfaceMuted: '#212A38',
+  outline: '#2F3948',
+  keep: '#32C888',
+  delete: '#F08269',
+  skip: '#7C8CA0',
+  progress: '#61A8F4',
+  highlight: '#F3B43F',
+  overlay: 'rgba(4, 7, 12, 0.76)',
+  scrim: 'rgba(3, 5, 10, 0.8)',
+  stageGlow: 'rgba(97, 168, 244, 0.14)',
+  cardGlass: 'rgba(255, 255, 255, 0.06)',
+  white: '#F9FAFB',
+  dangerText: '#FFD3C7',
+} as const;
+
+export const nightColors = {
+  canvas: '#090C12',
+  ink: '#F2F5F8',
+  mutedInk: '#98A4B1',
+  stage: '#02050A',
+  stageCard: '#0A1018',
+  surface: '#111720',
+  surfaceMuted: '#1A2230',
+  outline: '#263142',
+  keep: '#2AB977',
+  delete: '#DD7359',
+  skip: '#75859A',
+  progress: '#4C97E8',
+  highlight: '#D9A23B',
+  overlay: 'rgba(1, 3, 8, 0.84)',
+  scrim: 'rgba(0, 1, 4, 0.86)',
+  stageGlow: 'rgba(76, 151, 232, 0.08)',
+  cardGlass: 'rgba(255, 255, 255, 0.04)',
+  white: '#F5F7FA',
+  dangerText: '#F6C7BB',
+} as const;
+
+export const colors = lightColors;
 
 export const spacing = {
   xs: 6,
