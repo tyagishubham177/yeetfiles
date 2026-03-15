@@ -1,12 +1,6 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": ["expo.modules.directdelete.ExpoDirectDeleteModule"],
-    "publication": {
-      "groupId": "com.yeetfiles.modules",
-      "artifactId": "expo-direct-delete",
-      "version": "0.0.1",
-      "repository": "local-maven-repo"
-    }
+    "modules": ["expo.modules.directdelete.ExpoDirectDeleteModule"]
   }
 }
