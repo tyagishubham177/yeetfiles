@@ -117,9 +117,13 @@ function FileCardComponent({
   }));
 
   const finishSwipe = (direction: 'left' | 'right') => {
+    'worklet';
+
+    const completeGesture = direction === 'left' ? onDeleteGesture : onKeepGesture;
+
     if (!animationsEnabled) {
       translateX.value = 0;
-      runOnJS(direction === 'left' ? onDeleteGesture : onKeepGesture)();
+      runOnJS(completeGesture)();
       return;
     }
 
@@ -130,7 +134,7 @@ function FileCardComponent({
 
       translateX.value = 0;
       thresholdCrossed.value = false;
-      runOnJS(direction === 'left' ? onDeleteGesture : onKeepGesture)();
+      runOnJS(completeGesture)();
     });
   };
 
