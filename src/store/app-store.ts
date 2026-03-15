@@ -265,6 +265,10 @@ function parseDateValue(value: string | null): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function normalizeSortMode(value: SortMode): SortMode {
+  return value === 'smart' ? 'random' : value;
+}
+
 function getSmartSortScore(file: FileItem): number {
   let score = 0;
 
@@ -641,8 +645,8 @@ export const useAppStore = create<AppStore>()(
         })),
       setSortMode: (value) =>
         set((state) => ({
-          sortMode: value,
-          currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, value),
+          sortMode: normalizeSortMode(value),
+          currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, normalizeSortMode(value)),
         })),
       setNightModePreference: (value) =>
         set((state) => ({
@@ -1106,7 +1110,7 @@ export const useAppStore = create<AppStore>()(
           : [];
         const filesById = typedPersisted?.filesById ?? currentState.filesById;
         const queueOrder = (typedPersisted?.queueOrder ?? currentState.queueOrder).filter((fileId) => Boolean(filesById[fileId]));
-        const sortMode = typedPersisted?.sortMode ?? currentState.sortMode;
+        const sortMode = normalizeSortMode(typedPersisted?.sortMode ?? currentState.sortMode);
         const activeFilter = typedPersisted?.activeFilter ?? currentState.activeFilter;
         const recentSessionSummaries = (typedPersisted?.recentSessionSummaries ?? currentState.recentSessionSummaries)
           .filter((entry) => isWithinRecentDays(entry.completedAt, 90))
@@ -1338,7 +1342,7 @@ export function getActiveFilterLabel(state: Pick<AppStore, 'activeFilter' | 'fil
 
 export function getSortLabel(sortMode: SortMode): string {
   if (sortMode === 'smart') {
-    return 'Smart';
+    return 'Random';
   }
 
   if (sortMode === 'newest_first') {

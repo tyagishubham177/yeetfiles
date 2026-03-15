@@ -47,7 +47,7 @@ import {
 } from '../../src/store/app-store';
 import type { FilterType, SortMode } from '../../src/types/file-item';
 
-const SORT_OPTIONS: SortMode[] = ['random', 'smart', 'largest_first', 'oldest_first', 'newest_first'];
+const SORT_OPTIONS: SortMode[] = ['random', 'largest_first', 'oldest_first', 'newest_first'];
 
 export default function QueueScreen() {
   const router = useRouter();
@@ -127,6 +127,12 @@ export default function QueueScreen() {
       router.replace(ROUTES.summary);
     }
   }, [router, sessionSummary]);
+
+  useEffect(() => {
+    if (sortMode === 'smart') {
+      setSortMode('random');
+    }
+  }, [setSortMode, sortMode]);
 
   const remainingCount = useMemo(() => {
     if (!targetCount) {

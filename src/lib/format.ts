@@ -70,13 +70,22 @@ export function formatRelativeDate(value: string | null): string {
 
   const diffMs = target - Date.now();
   const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000));
-  const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
   if (Math.abs(diffDays) < 1) {
     return 'Today';
   }
 
   if (Math.abs(diffDays) < 30) {
+    if (typeof Intl === 'undefined' || typeof Intl.RelativeTimeFormat !== 'function') {
+      const absoluteDays = Math.abs(diffDays);
+      if (diffDays < 0) {
+        return absoluteDays === 1 ? 'Yesterday' : `${absoluteDays} days ago`;
+      }
+
+      return absoluteDays === 1 ? 'Tomorrow' : `In ${absoluteDays} days`;
+    }
+
+    const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
     return relativeFormatter.format(diffDays, 'day');
   }
 
