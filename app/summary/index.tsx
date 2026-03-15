@@ -1,22 +1,63 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  FadeInDown,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { UndoToast } from '../../src/components/review/undo-toast';
 import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
-import { radius, spacing, typography } from '../../src/constants/ui-tokens';
+import { radius, shadows, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
 import { formatBytes, formatDuration } from '../../src/lib/format';
 import { useAppTheme } from '../../src/lib/theme';
 import { getQuickSessionLabel, selectNewSinceLastScanCount, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
 
+type ThemeColors = ReturnType<typeof useAppTheme>['colors'];
+
+function AnimatedCounter({ value, label, delay = 0, colors, isDark }: { value: number; label: string; delay?: number; colors: ThemeColors; isDark: boolean }) {
+  const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
+  const scale = useSharedValue(0.9);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (animationsEnabled) {
+      opacity.value = withDelay(delay, withTiming(1, { duration: 400 }));
+      scale.value = withDelay(delay, withSpring(1, { damping: 12, stiffness: 200 }));
+    } else {
+      opacity.value = 1;
+      scale.value = 1;
+    }
+  }, [animationsEnabled, delay, opacity, scale]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }, animStyle]}>
+      <Text style={[styles.statLabel, { color: colors.mutedInk }]}>{label}</Text>
+      <Text style={[styles.statValue, { color: colors.ink }]}>{value}</Text>
+    </Animated.View>
+  );
+}
+
 export default function SummaryScreen() {
   const router = useRouter();
   const { colors, isDark } = useAppTheme();
-  const [entrance] = useState(() => new Animated.Value(0));
   const summary = useAppStore((state) => state.sessionSummary);
   const currentFileId = useAppStore((state) => state.currentFileId);
   const scanState = useAppStore((state) => state.scanState);
@@ -29,6 +70,10 @@ export default function SummaryScreen() {
   const undoLastAction = useAppStore((state) => state.undoLastAction);
   const topUndoEntry = useAppStore(selectTopUndoEntry);
   const hapticsEnabled = useAppStore((state) => state.settings.hapticsEnabled);
+  const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
+
+  // Celebration orb animation
+  const orbPulse = useSharedValue(1);
 
   useEffect(() => {
     if (!summary) {
@@ -37,13 +82,20 @@ export default function SummaryScreen() {
   }, [router, summary]);
 
   useEffect(() => {
-    Animated.spring(entrance, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 65,
-    }).start();
-  }, [entrance]);
+    if (!animationsEnabled) return;
+    orbPulse.value = withRepeat(
+      withSequence(
+        withTiming(1.15, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) })
+      ),
+      -1,
+      true
+    );
+  }, [animationsEnabled, orbPulse]);
+
+  const orbStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: orbPulse.value }],
+  }));
 
   if (!summary) {
     return null;
@@ -86,55 +138,59 @@ export default function SummaryScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Background celebration orbs */}
         <Animated.View
           style={[
-            styles.banner,
-            {
-              opacity: entrance,
-              transform: [
-                {
-                  translateY: entrance.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [18, 0],
-                  }),
-                },
-              ],
-            },
+            styles.celebrationOrb,
+            { backgroundColor: isDark ? 'rgba(243,180,63,0.08)' : 'rgba(243,180,63,0.14)' },
+            orbStyle,
           ]}
+        />
+        <Animated.View
+          style={[
+            styles.celebrationOrbB,
+            { backgroundColor: isDark ? 'rgba(97,168,244,0.06)' : 'rgba(60,145,230,0.1)' },
+          ]}
+        />
+
+        <Animated.View
+          entering={animationsEnabled ? FadeInDown.duration(600).delay(100) : undefined}
+          style={styles.banner}
         >
           <View style={[styles.celebrationBadge, { backgroundColor: colors.highlight }]}>
+            <Text style={styles.celebrationBadgeIcon}>✨</Text>
             <Text style={styles.celebrationBadgeLabel}>Session wrapped</Text>
           </View>
           <Text style={[styles.eyebrow, { color: colors.progress }]}>{getQuickSessionLabel((summary.targetCount as 10 | 25 | 50 | null) ?? 10)} complete</Text>
-          <Text style={[styles.title, { color: colors.ink }]}>{summary.reviewedCount} decisions made</Text>
+          <Text style={[styles.title, { color: colors.ink }]}>{summary.reviewedCount} decisions{'\n'}made</Text>
           <Text style={[styles.subtitle, { color: colors.mutedInk }]}>{paceCopy}</Text>
           <Text style={[styles.paceMeta, { color: colors.mutedInk }]}>Time: {formatDuration(summary.durationMs)}</Text>
-          <View style={[styles.heroStat, { backgroundColor: isDark ? colors.stageCard : '#101418' }]}>
-            <Text style={styles.heroStatLabel}>{heroLabel}</Text>
+
+          <Animated.View
+            entering={animationsEnabled ? FadeInUp.duration(500).delay(400) : undefined}
+            style={[styles.heroStat, { backgroundColor: isDark ? colors.stageCard : '#101418' }]}
+          >
+            <View style={styles.heroStatHeader}>
+              <Text style={styles.heroStatLabel}>{heroLabel}</Text>
+              <View style={[styles.heroStatBadge, { backgroundColor: isDark ? 'rgba(50,200,136,0.2)' : 'rgba(46,194,126,0.2)' }]}>
+                <Text style={[styles.heroStatBadgeText, { color: isDark ? '#32C888' : '#2EC27E' }]}>↑</Text>
+              </View>
+            </View>
             <Text style={[styles.heroStatValue, { color: colors.white }]}>{heroValue}</Text>
-          </View>
+          </Animated.View>
         </Animated.View>
 
         <View style={styles.grid}>
-          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
-            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Kept</Text>
-            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.keptCount}</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
-            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Deleted</Text>
-            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.deletedCount}</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
-            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Moved</Text>
-            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.movedCount}</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: isDark ? colors.surfaceMuted : '#EAF2FA', borderColor: isDark ? colors.outline : 'transparent' }]}>
-            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Skipped</Text>
-            <Text style={[styles.statValue, { color: colors.ink }]}>{summary.skippedCount}</Text>
-          </View>
+          <AnimatedCounter value={summary.keptCount} label="Kept" delay={200} colors={colors} isDark={isDark} />
+          <AnimatedCounter value={summary.deletedCount} label="Deleted" delay={300} colors={colors} isDark={isDark} />
+          <AnimatedCounter value={summary.movedCount} label="Moved" delay={400} colors={colors} isDark={isDark} />
+          <AnimatedCounter value={summary.skippedCount} label="Skipped" delay={500} colors={colors} isDark={isDark} />
         </View>
 
-        <View style={styles.actions}>
+        <Animated.View
+          entering={animationsEnabled ? FadeInUp.duration(500).delay(600) : undefined}
+          style={styles.actions}
+        >
           <Button label="Continue cleaning" onPress={continueCleaning} />
           <Button
             label={scanState === 'scanning' && scanMode === 'rescan' ? 'Re-scanning photos...' : 'Check for new photos'}
@@ -143,10 +199,16 @@ export default function SummaryScreen() {
             disabled={scanState === 'scanning' && scanMode === 'rescan'}
           />
           <Button label="Back to welcome" onPress={() => router.replace(ROUTES.welcome)} variant="ghost" />
-        </View>
+        </Animated.View>
 
-        <View style={[styles.rescanCard, { backgroundColor: isDark ? colors.surfaceMuted : '#EEF4FB' }]}>
-          <Text style={[styles.rescanTitle, { color: colors.ink }]}>Re-scan lane</Text>
+        <Animated.View
+          entering={animationsEnabled ? FadeInUp.duration(500).delay(700) : undefined}
+          style={[styles.rescanCard, { backgroundColor: isDark ? colors.surfaceMuted : '#EEF4FB', borderColor: isDark ? colors.outline : 'transparent' }]}
+        >
+          <View style={styles.rescanHeader}>
+            <View style={[styles.rescanDot, { backgroundColor: colors.progress }]} />
+            <Text style={[styles.rescanTitle, { color: colors.ink }]}>Re-scan lane</Text>
+          </View>
           <Text style={[styles.rescanBody, { color: colors.ink }]}>
             {newSinceLastScanCount > 0
               ? `${newSinceLastScanCount} photo${newSinceLastScanCount === 1 ? '' : 's'} are still marked new since the last scan.`
@@ -155,7 +217,7 @@ export default function SummaryScreen() {
           {lastRescanSummary ? (
             <Text style={[styles.rescanHint, { color: colors.mutedInk }]}>Last re-scan added {lastRescanSummary.newFileCount} new and kept {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} out of the queue.</Text>
           ) : null}
-        </View>
+        </Animated.View>
 
         {topUndoEntry ? <UndoToast entry={topUndoEntry} onUndo={handleUndo} tone="light" /> : null}
       </ScrollView>
@@ -175,6 +237,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.xl,
   },
+  celebrationOrb: {
+    position: 'absolute',
+    top: 60,
+    right: -20,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+  },
+  celebrationOrbB: {
+    position: 'absolute',
+    top: 180,
+    left: -40,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+  },
   banner: {
     paddingTop: spacing.xxl,
     gap: spacing.md,
@@ -184,6 +262,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  celebrationBadgeIcon: {
+    fontSize: 14,
   },
   celebrationBadgeLabel: {
     color: '#08111D',
@@ -200,8 +284,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: typography.display,
-    fontSize: 42,
-    lineHeight: 48,
+    fontSize: 40,
+    lineHeight: 46,
   },
   subtitle: {
     fontFamily: typography.body,
@@ -215,7 +299,13 @@ const styles = StyleSheet.create({
   heroStat: {
     borderRadius: radius.lg,
     padding: spacing.lg,
-    gap: 6,
+    gap: 8,
+    ...(shadows.premium as object),
+  },
+  heroStatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   heroStatLabel: {
     color: 'rgba(249,250,251,0.72)',
@@ -223,6 +313,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+  },
+  heroStatBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroStatBadgeText: {
+    fontFamily: typography.bold,
+    fontSize: 14,
   },
   heroStatValue: {
     fontFamily: typography.display,
@@ -244,6 +345,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.medium,
     fontSize: 13,
     textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   statValue: {
     fontFamily: typography.display,
@@ -254,13 +356,25 @@ const styles = StyleSheet.create({
   },
   rescanCard: {
     borderRadius: radius.lg,
+    borderWidth: 1,
     padding: spacing.lg,
-    gap: 6,
+    gap: 8,
+  },
+  rescanHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  rescanDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   rescanTitle: {
     fontFamily: typography.bold,
     fontSize: 15,
     textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   rescanBody: {
     fontFamily: typography.body,

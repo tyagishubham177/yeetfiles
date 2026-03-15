@@ -3,11 +3,12 @@ import { SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold } from '@expo-google-fon
 import { useFonts } from 'expo-font';
 import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AnimatedSplash } from '../src/components/branding/animated-splash';
 import { ErrorView } from '../src/components/feedback/error-view';
 import { useAppHealthMonitor } from '../src/hooks/use-app-health-monitor';
 import { useNotificationSync } from '../src/hooks/use-notification-sync';
@@ -30,6 +31,7 @@ export default function RootLayout() {
     SpaceGrotesk_600SemiBold,
     SpaceGrotesk_700Bold,
   });
+  const [showMotionSplash, setShowMotionSplash] = useState(true);
 
   useNotificationSync();
   useAppHealthMonitor();
@@ -48,6 +50,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.flex}>
       <SafeAreaProvider>
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }} />
+        {showMotionSplash ? <AnimatedSplash onComplete={() => setShowMotionSplash(false)} /> : null}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

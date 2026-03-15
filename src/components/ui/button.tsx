@@ -1,8 +1,16 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { radius, spacing, typography } from '../../constants/ui-tokens';
 import { useAppTheme } from '../../lib/theme';
 import { useAppStore } from '../../store/app-store';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type ButtonProps = {
   label: string;
@@ -29,6 +37,9 @@ export function Button({
   const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
   const { colors, isDark } = useAppTheme();
   const resolvedDisabled = disabled || loading;
+  const scale = useSharedValue(1);
+  const glowOpacity = useSharedValue(0);
+
   const labelColor =
     variant === 'primary'
       ? colors.onAction
@@ -38,29 +49,66 @@ export function Button({
           ? colors.progress
           : colors.ink;
 
+  const handlePressIn = () => {
+    if (resolvedDisabled || !animationsEnabled) return;
+    scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    glowOpacity.value = withTiming(1, { duration: 120 });
+  };
+
+  const handlePressOut = () => {
+    if (!animationsEnabled) return;
+    scale.value = withSpring(1, { damping: 12, stiffness: 300 });
+    glowOpacity.value = withTiming(0, { duration: 200 });
+  };
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
+
+  const bgColor =
+    variant === 'primary'
+      ? colors.action
+      : variant === 'secondary'
+        ? colors.surfaceMuted
+        : variant === 'danger'
+          ? colors.delete
+          : 'transparent';
+
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       android_disableSound={!soundEnabled}
       disabled={resolvedDisabled}
       onPress={onPress}
-      style={({ pressed }) => [
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[
         styles.base,
         compact && styles.compact,
-        variant === 'primary' && { backgroundColor: colors.action },
-        variant === 'secondary' && { backgroundColor: colors.surfaceMuted },
-        variant === 'danger' && { backgroundColor: colors.delete },
+        { backgroundColor: bgColor },
+        variant === 'primary' && isDark && styles.primaryDark,
         variant === 'ghost' && styles.ghost,
-        pressed && !resolvedDisabled && animationsEnabled && styles.pressed,
         resolvedDisabled && styles.disabled,
+        animatedStyle,
         style,
       ]}
     >
+      {/* Inner glow on press for primary */}
+      {variant === 'primary' ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.innerGlow, { backgroundColor: isDark ? colors.accentGradientStart : colors.accentGradientStart }, glowStyle]}
+        />
+      ) : null}
       <View style={styles.content}>
         {loading ? <ActivityIndicator color={labelColor} size="small" /> : null}
         <Text style={[styles.label, { color: labelColor }]}>{loading ? loadingLabel ?? label : label}</Text>
       </View>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -71,10 +119,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
+    overflow: 'hidden',
   },
   compact: {
     minHeight: 44,
     paddingHorizontal: spacing.md,
+  },
+  primaryDark: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
   content: {
     flexDirection: 'row',
@@ -85,15 +138,17 @@ const styles = StyleSheet.create({
   ghost: {
     backgroundColor: 'transparent',
   },
-  pressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.99 }],
-  },
   disabled: {
     opacity: 0.45,
   },
   label: {
     fontFamily: typography.bold,
     fontSize: 16,
+    letterSpacing: 0.2,
+  },
+  innerGlow: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0,
+    borderRadius: radius.pill,
   },
 });

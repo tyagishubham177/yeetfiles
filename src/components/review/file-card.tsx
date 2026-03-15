@@ -43,10 +43,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function OverlayChip({ label }: { label: string }) {
+function OverlayChip({ label, tone }: { label: string; tone?: 'default' | 'new' }) {
   return (
-    <View style={styles.overlayChip}>
-      <Text style={styles.overlayChipLabel}>{label}</Text>
+    <View style={[styles.overlayChip, tone === 'new' && styles.overlayChipNew]}>
+      <Text style={[styles.overlayChipLabel, tone === 'new' && styles.overlayChipLabelNew]}>{label}</Text>
     </View>
   );
 }
@@ -283,7 +283,7 @@ function FileCardComponent({
 
             <View style={styles.infoStackLeft}>
               <OverlayChip label={current.albumTitle ?? 'Library'} />
-              {current.isNewSinceLastScan ? <OverlayChip label="New since last scan" /> : null}
+              {current.isNewSinceLastScan ? <OverlayChip label="New" tone="new" /> : null}
             </View>
             <View style={styles.infoStackRight}>
               <OverlayChip label={formatBytes(current.sizeBytes)} />
@@ -305,10 +305,18 @@ function FileCardComponent({
 
             {showHints ? (
               <View style={styles.hintRow}>
-                <Text style={styles.hintLeft}>Delete</Text>
-                <Text style={styles.hintRight}>Keep</Text>
+                <View style={styles.hintPill}>
+                  <View style={[styles.hintDot, styles.hintDotDelete]} />
+                  <Text style={styles.hintLeft}>Delete</Text>
+                </View>
+                <View style={styles.hintPill}>
+                  <Text style={styles.hintRight}>Keep</Text>
+                  <View style={[styles.hintDot, styles.hintDotKeep]} />
+                </View>
               </View>
             ) : null}
+            {/* Bottom vignette for meta readability */}
+            <View pointerEvents="none" style={styles.bottomVignette} />
 
             <View style={[styles.metaStrip, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.64)' : 'rgba(8,12,20,0.58)' }]}>
               <View style={styles.metaTextWrap}>
@@ -407,14 +415,24 @@ const styles = StyleSheet.create({
   },
   overlayChip: {
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(8,12,20,0.58)',
+    backgroundColor: 'rgba(8,12,20,0.62)',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  overlayChipNew: {
+    backgroundColor: 'rgba(243,180,63,0.22)',
+    borderColor: 'rgba(243,180,63,0.3)',
   },
   overlayChipLabel: {
     color: '#FFFFFF',
     fontFamily: typography.bold,
     fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  overlayChipLabelNew: {
+    color: '#F3B43F',
   },
   pendingBadge: {
     position: 'absolute',
@@ -453,23 +471,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  hintPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(8,12,20,0.52)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  hintDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  hintDotDelete: {
+    backgroundColor: 'rgba(231,111,81,0.8)',
+  },
+  hintDotKeep: {
+    backgroundColor: 'rgba(46,194,126,0.8)',
+  },
   hintLeft: {
     color: 'rgba(249,250,251,0.9)',
     fontFamily: typography.bold,
     fontSize: 13,
-    backgroundColor: 'rgba(231,111,81,0.22)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
   },
   hintRight: {
     color: 'rgba(249,250,251,0.9)',
     fontFamily: typography.bold,
     fontSize: 13,
-    backgroundColor: 'rgba(46,194,126,0.22)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
+  },
+  bottomVignette: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 120,
+    backgroundColor: 'transparent',
+    // Simulated gradient via layered opacity
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
   },
   metaStrip: {
     position: 'absolute',

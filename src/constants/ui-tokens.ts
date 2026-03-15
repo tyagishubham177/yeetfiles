@@ -22,6 +22,18 @@ export const lightColors = {
   cardGlass: 'rgba(12, 18, 32, 0.42)',
   white: '#FFFFFF',
   dangerText: '#7A1F12',
+  // Elevated design tokens
+  accentGradientStart: '#3C91E6',
+  accentGradientEnd: '#5B68DF',
+  warmGradientStart: '#F3B43F',
+  warmGradientEnd: '#F07E3E',
+  glassOverlay: 'rgba(255, 255, 255, 0.72)',
+  glassBorder: 'rgba(255, 255, 255, 0.4)',
+  subtleGlow: 'rgba(60, 145, 230, 0.08)',
+  keepGlow: 'rgba(46, 194, 126, 0.18)',
+  deleteGlow: 'rgba(231, 111, 81, 0.18)',
+  shimmerHighlight: 'rgba(255, 255, 255, 0.6)',
+  cardShadowColor: '#08111D',
 } as const;
 
 export const darkColors = {
@@ -46,6 +58,18 @@ export const darkColors = {
   cardGlass: 'rgba(255, 255, 255, 0.06)',
   white: '#F9FAFB',
   dangerText: '#FFD3C7',
+  // Elevated design tokens
+  accentGradientStart: '#61A8F4',
+  accentGradientEnd: '#7B82EF',
+  warmGradientStart: '#F3B43F',
+  warmGradientEnd: '#E87042',
+  glassOverlay: 'rgba(255, 255, 255, 0.05)',
+  glassBorder: 'rgba(255, 255, 255, 0.1)',
+  subtleGlow: 'rgba(97, 168, 244, 0.06)',
+  keepGlow: 'rgba(50, 200, 136, 0.2)',
+  deleteGlow: 'rgba(240, 130, 105, 0.2)',
+  shimmerHighlight: 'rgba(255, 255, 255, 0.08)',
+  cardShadowColor: '#000000',
 } as const;
 
 export const nightColors = {
@@ -70,6 +94,18 @@ export const nightColors = {
   cardGlass: 'rgba(255, 255, 255, 0.04)',
   white: '#F5F7FA',
   dangerText: '#F6C7BB',
+  // Elevated design tokens
+  accentGradientStart: '#4C97E8',
+  accentGradientEnd: '#6A72E0',
+  warmGradientStart: '#D9A23B',
+  warmGradientEnd: '#C66035',
+  glassOverlay: 'rgba(255, 255, 255, 0.03)',
+  glassBorder: 'rgba(255, 255, 255, 0.06)',
+  subtleGlow: 'rgba(76, 151, 232, 0.04)',
+  keepGlow: 'rgba(42, 185, 119, 0.16)',
+  deleteGlow: 'rgba(221, 115, 89, 0.16)',
+  shimmerHighlight: 'rgba(255, 255, 255, 0.06)',
+  cardShadowColor: '#000000',
 } as const;
 
 export const colors = lightColors;
@@ -119,6 +155,28 @@ export const shadows = {
       shadowOpacity: 0.18,
       shadowRadius: 18,
       shadowOffset: { width: 0, height: 10 },
+    },
+  }),
+  glow: Platform.select({
+    android: {
+      elevation: 20,
+    },
+    default: {
+      shadowColor: '#3C91E6',
+      shadowOpacity: 0.28,
+      shadowRadius: 32,
+      shadowOffset: { width: 0, height: 8 },
+    },
+  }),
+  premium: Platform.select({
+    android: {
+      elevation: 24,
+    },
+    default: {
+      shadowColor: '#06101C',
+      shadowOpacity: 0.32,
+      shadowRadius: 40,
+      shadowOffset: { width: 0, height: 20 },
     },
   }),
 } as const;

@@ -41,16 +41,26 @@ export function ProgressHeader({
 
   return (
     <View style={[styles.card, { backgroundColor: colors.cardGlass, borderColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.09)' }]}>
+      {/* Subtle top accent glow */}
+      <View
+        style={[
+          styles.topGlow,
+          { backgroundColor: isNightMode ? 'rgba(76,151,232,0.06)' : 'rgba(60,145,230,0.08)' },
+        ]}
+      />
       <ProgressRing progress={progress} reviewedCount={reviewedCount} />
       <View style={styles.metaWrap}>
-        <Text style={[styles.eyebrow, { color: isNightMode ? 'rgba(245,247,250,0.68)' : 'rgba(249,250,251,0.74)' }]}>{sessionLabel}</Text>
+        <View style={styles.eyebrowRow}>
+          <View style={[styles.liveDot, { backgroundColor: isNightMode ? '#4C97E8' : '#3C91E6' }]} />
+          <Text style={[styles.eyebrow, { color: isNightMode ? 'rgba(245,247,250,0.68)' : 'rgba(249,250,251,0.74)' }]}>{sessionLabel}</Text>
+        </View>
         <Text style={[styles.title, { color: colors.white }]}>{remainingCount} left in this pass</Text>
         <Text style={[styles.subtle, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.78)' }]}>
-          {visibleQueueCount} ready right now / {pendingQueueCount} still waiting overall
+          {visibleQueueCount} ready now · {pendingQueueCount} waiting
         </Text>
         {estimatedPhotoCount > 0 ? (
           <Text style={[styles.context, { color: isNightMode ? 'rgba(245,247,250,0.62)' : 'rgba(249,250,251,0.66)' }]}>
-            That is roughly room for {estimatedPhotoCount} more average photos.
+            Room for ~{estimatedPhotoCount} more average photos.
           </Text>
         ) : null}
         {newSinceLastScanCount > 0 ? (
@@ -61,16 +71,16 @@ export function ProgressHeader({
         <View style={styles.statRow}>
           <View style={[styles.statPill, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)' }]}>
             <Text style={[styles.statLabel, { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' }]}>Freed</Text>
-            <Text style={[styles.statValue, { color: colors.white }]}>{formatBytes(storageFreedBytes)}</Text>
+            <Text style={[styles.statValue, { color: storageFreedBytes > 0 ? (isNightMode ? '#2AB977' : '#32C888') : colors.white }]}>{formatBytes(storageFreedBytes)}</Text>
           </View>
           <View style={[styles.statPill, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)' }]}>
             <Text style={[styles.statLabel, { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' }]}>Sort</Text>
             <Text style={[styles.statValue, { color: colors.white }]}>{sortLabel}</Text>
           </View>
           {newSinceLastScanCount > 0 ? (
-            <View style={[styles.statPill, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)' }]}>
+            <View style={[styles.statPill, { backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)' }]}>
               <Text style={[styles.statLabel, { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' }]}>New</Text>
-              <Text style={[styles.statValue, { color: colors.white }]}>{newSinceLastScanCount}</Text>
+              <Text style={[styles.statValue, { color: colors.highlight }]}>{newSinceLastScanCount}</Text>
             </View>
           ) : (
             <View style={[styles.statPill, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)' }]}>
@@ -92,10 +102,30 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.lg,
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+  topGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '40%',
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
   },
   metaWrap: {
     flex: 1,
     gap: 4,
+  },
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   eyebrow: {
     fontFamily: typography.medium,
