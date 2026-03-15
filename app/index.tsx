@@ -101,12 +101,16 @@ export default function WelcomeScreen() {
                     styles.sessionChip,
                     {
                       backgroundColor: selected ? colors.action : colors.surfaceMuted,
-                      borderColor: selected ? colors.action : isDark ? colors.outline : 'transparent',
+                      borderColor: selected ? colors.highlight : isDark ? colors.outline : 'transparent',
                     },
+                    selected && styles.sessionChipSelected,
                     pressed && styles.pressedCard,
                   ]}
                 >
-                  <Text style={[styles.sessionChipLabel, { color: selected ? colors.onAction : colors.ink }]}>{getQuickSessionLabel(option)}</Text>
+                  <View style={styles.sessionChipHeader}>
+                    <Text style={[styles.sessionChipLabel, { color: selected ? colors.onAction : colors.ink }]}>{getQuickSessionLabel(option)}</Text>
+                    {selected ? <Text style={styles.sessionChipCheck}>Selected</Text> : null}
+                  </View>
                   <Text style={[styles.sessionChipSubtle, { color: selected ? 'rgba(249,250,251,0.72)' : colors.mutedInk }]}>
                     {option === 10 ? '2 min' : option === 25 ? '5 min' : '10 min'}
                   </Text>
@@ -134,7 +138,9 @@ export default function WelcomeScreen() {
           {launchMessage ? <StatusBanner message={launchMessage} /> : null}
           <View style={[styles.trustNote, { borderTopColor: colors.outline }]}>
             <Text style={[styles.trustTitle, { color: colors.ink }]}>Trust note</Text>
-            <Text style={[styles.trustBody, { color: colors.mutedInk }]}>No cloud upload. No silent deletes. Each fresh app launch starts from a fresh scan instead of restoring an old queue.</Text>
+            <Text style={[styles.trustBody, { color: colors.mutedInk }]}>
+              No cloud upload. No hidden deletes. Your earlier keep, skip, and delete decisions now stay durable across app restarts unless you explicitly run a clean rebuild.
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -241,6 +247,15 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 4,
   },
+  sessionChipSelected: {
+    transform: [{ scale: 1.02 }],
+  },
+  sessionChipHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   pressedCard: {
     opacity: 0.92,
     transform: [{ scale: 0.99 }],
@@ -248,6 +263,13 @@ const styles = StyleSheet.create({
   sessionChipLabel: {
     fontFamily: typography.bold,
     fontSize: 16,
+  },
+  sessionChipCheck: {
+    color: '#FFFFFF',
+    fontFamily: typography.bold,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   sessionChipSubtle: {
     fontFamily: typography.medium,

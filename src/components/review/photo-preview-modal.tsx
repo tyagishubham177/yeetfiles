@@ -1,8 +1,9 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, radius, spacing, typography } from '../../constants/ui-tokens';
-import { formatBytes, formatDateTime, formatDimensions, formatPathContext } from '../../lib/format';
+import { radius, spacing, typography } from '../../constants/ui-tokens';
+import { formatBytes, formatDateTime, formatDimensions, formatPathContext, formatRelativeDate } from '../../lib/format';
+import { useAppTheme } from '../../lib/theme';
 import type { FileItem } from '../../types/file-item';
 import { Button } from '../ui/button';
 import { ZoomablePreviewImage } from './zoomable-preview-image';
@@ -26,10 +27,20 @@ type MetaRowProps = {
 };
 
 function MetaRow({ label, value }: MetaRowProps) {
+  const { colors, isNightMode } = useAppTheme();
+
   return (
     <View style={styles.metaRow}>
-      <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
+      <Text style={[styles.metaLabel, { color: isNightMode ? 'rgba(245,247,250,0.7)' : 'rgba(249,250,251,0.72)' }]}>{label}</Text>
+      <Text style={[styles.metaValue, { color: colors.white }]}>{value}</Text>
+    </View>
+  );
+}
+
+function OverlayChip({ label }: { label: string }) {
+  return (
+    <View style={styles.overlayChip}>
+      <Text style={styles.overlayChipLabel}>{label}</Text>
     </View>
   );
 }
@@ -47,26 +58,43 @@ export function PhotoPreviewModal({
   onShare,
 }: PhotoPreviewModalProps) {
   const { height, width } = useWindowDimensions();
-  const imageHeight = Math.max(240, Math.min(height * 0.38, width * 1.05, 360));
+  const { colors, isDark, isNightMode } = useAppTheme();
+  const imageHeight = Math.max(260, Math.min(height * 0.42, width * 1.05, 420));
 
   return (
     <Modal visible={visible} animationType={animationsEnabled ? 'fade' : 'none'} onRequestClose={onClose}>
-      <View style={styles.wrap}>
+      <View style={[styles.wrap, { backgroundColor: colors.stage }]}>
         <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
           <View style={styles.header}>
             <View style={styles.headerCopy}>
-              <Text style={styles.eyebrow}>Full preview</Text>
-              <Text style={styles.title}>Inspect before you decide</Text>
+              <Text style={[styles.eyebrow, { color: isNightMode ? 'rgba(245,247,250,0.7)' : 'rgba(249,250,251,0.74)' }]}>Full preview</Text>
+              <Text style={[styles.title, { color: colors.white }]}>Inspect before you decide</Text>
             </View>
             <Pressable android_disableSound={!soundEnabled} onPress={onClose} style={({ pressed }) => pressed && styles.linkPressed}>
-              <Text style={styles.closeLink}>Close</Text>
+              <Text style={[styles.closeLink, { color: isNightMode ? 'rgba(245,247,250,0.84)' : 'rgba(249,250,251,0.84)' }]}>Close</Text>
             </Pressable>
           </View>
 
           {file ? (
             <View style={styles.content}>
-              <View style={[styles.imageCard, { height: imageHeight }]}>
-                <ZoomablePreviewImage uri={file.previewUri} height={imageHeight - spacing.md * 2} />
+              <View
+                style={[
+                  styles.imageCard,
+                  {
+                    height: imageHeight,
+                    backgroundColor: isNightMode ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)',
+                  },
+                ]}
+              >
+                <View style={styles.overlayStackLeft}>
+                  <OverlayChip label={file.albumTitle ?? 'Library'} />
+                  {file.isNewSinceLastScan ? <OverlayChip label="New since last scan" /> : null}
+                </View>
+                <View style={styles.overlayStackRight}>
+                  <OverlayChip label={formatBytes(file.sizeBytes)} />
+                  <OverlayChip label={formatRelativeDate(file.createdAt)} />
+                </View>
+                <ZoomablePreviewImage uri={file.previewUri} height={imageHeight - spacing.md * 2} onDismiss={onClose} />
               </View>
 
               <ScrollView
@@ -76,10 +104,27 @@ export function PhotoPreviewModal({
                 nestedScrollEnabled
                 bounces={false}
               >
-                <View style={styles.metaCard}>
+                <View
+                  style={[
+                    styles.metaCard,
+                    {
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.09)',
+                    },
+                  ]}
+                >
                   <View style={styles.metaHeader}>
-                    <Text style={styles.fileName}>{file.name}</Text>
-                    <Text style={styles.bucket}>{file.bucketType}</Text>
+                    <Text style={[styles.fileName, { color: colors.white }]}>{file.name}</Text>
+                    <Text
+                      style={[
+                        styles.bucket,
+                        {
+                          color: colors.white,
+                          backgroundColor: isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.12)',
+                        },
+                      ]}
+                    >
+                      {file.bucketType}
+                    </Text>
                   </View>
 
                   <MetaRow label="Album" value={file.albumTitle ?? 'Other'} />
@@ -91,8 +136,15 @@ export function PhotoPreviewModal({
                   <MetaRow label="Path context" value={formatPathContext(file.uri)} />
                 </View>
 
-                <View style={styles.actionCard}>
-                  <Text style={styles.actionTitle}>Preview actions</Text>
+                <View
+                  style={[
+                    styles.actionCard,
+                    {
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.09)',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.actionTitle, { color: colors.white }]}>Preview actions</Text>
                   <View style={styles.actionGrid}>
                     <Button label="Keep" onPress={onKeep} compact style={styles.actionButton} />
                     <Button label="Skip" onPress={onSkip} variant="secondary" compact style={styles.actionButton} />
@@ -107,8 +159,9 @@ export function PhotoPreviewModal({
                       style={styles.actionButton}
                     />
                   </View>
-                  <Text style={styles.actionHint}>Delete may use Android confirmation unless direct delete access is enabled in Settings.</Text>
-                  <Text style={styles.zoomHint}>Pinch to zoom and drag when zoomed in.</Text>
+                  <Text style={[styles.actionHint, { color: isNightMode ? 'rgba(245,247,250,0.74)' : 'rgba(249,250,251,0.78)' }]}>
+                    Swipe down to dismiss. Pinch to zoom. Delete still falls back honestly if Android popup-free delete is unavailable.
+                  </Text>
                 </View>
               </ScrollView>
             </View>
@@ -122,7 +175,6 @@ export function PhotoPreviewModal({
 const styles = StyleSheet.create({
   wrap: {
     flex: 1,
-    backgroundColor: colors.stage,
   },
   safeArea: {
     flex: 1,
@@ -142,20 +194,17 @@ const styles = StyleSheet.create({
     paddingRight: spacing.md,
   },
   eyebrow: {
-    color: 'rgba(249,250,251,0.7)',
     fontFamily: typography.medium,
     fontSize: 12,
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   title: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 30,
     lineHeight: 34,
   },
   closeLink: {
-    color: 'rgba(249,250,251,0.84)',
     fontFamily: typography.medium,
     fontSize: 15,
     paddingVertical: spacing.xs,
@@ -170,10 +219,35 @@ const styles = StyleSheet.create({
   imageCard: {
     borderRadius: radius.lg,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
+  },
+  overlayStackLeft: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+    gap: spacing.xs,
+    zIndex: 2,
+  },
+  overlayStackRight: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    gap: spacing.xs,
+    alignItems: 'flex-end',
+    zIndex: 2,
+  },
+  overlayChip: {
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(8,12,20,0.58)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  overlayChipLabel: {
+    color: '#FFFFFF',
+    fontFamily: typography.bold,
+    fontSize: 12,
   },
   detailScroll: {
     flex: 1,
@@ -185,7 +259,6 @@ const styles = StyleSheet.create({
   },
   metaCard: {
     borderRadius: radius.lg,
-    backgroundColor: 'rgba(255,255,255,0.08)',
     padding: spacing.lg,
     gap: spacing.sm,
   },
@@ -198,16 +271,13 @@ const styles = StyleSheet.create({
   },
   fileName: {
     flex: 1,
-    color: colors.white,
     fontFamily: typography.bold,
     fontSize: 18,
   },
   bucket: {
-    color: colors.white,
     fontFamily: typography.medium,
     fontSize: 12,
     textTransform: 'capitalize',
-    backgroundColor: 'rgba(255,255,255,0.12)',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
@@ -216,26 +286,22 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaLabel: {
-    color: 'rgba(249,250,251,0.7)',
     fontFamily: typography.medium,
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
   },
   metaValue: {
-    color: colors.white,
     fontFamily: typography.body,
     fontSize: 15,
     lineHeight: 22,
   },
   actionCard: {
     borderRadius: radius.lg,
-    backgroundColor: 'rgba(255,255,255,0.08)',
     padding: spacing.lg,
     gap: spacing.md,
   },
   actionTitle: {
-    color: colors.white,
     fontFamily: typography.display,
     fontSize: 24,
   },
@@ -249,16 +315,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   actionHint: {
-    color: 'rgba(249,250,251,0.72)',
     fontFamily: typography.body,
     fontSize: 14,
     lineHeight: 22,
-  },
-  zoomHint: {
-    color: 'rgba(249,250,251,0.6)',
-    fontFamily: typography.medium,
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
   },
 });

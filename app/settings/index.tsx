@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Alert, AppState, Pressable, ScrollView, Share, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StatusBanner } from '../../src/components/feedback/status-banner';
+import { HistoryHeatmap } from '../../src/components/settings/history-heatmap';
 import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
@@ -16,18 +17,21 @@ import {
   supportsManageMediaAccess,
 } from '../../src/features/file-ops/manage-media-service';
 import { requestNotificationPermissionStateAsync } from '../../src/features/notifications/notification-service';
-import { formatBytes, formatDateTime } from '../../src/lib/format';
+import { formatBytes, formatDateTime, formatDayLabel } from '../../src/lib/format';
 import { useAppTheme } from '../../src/lib/theme';
+import { getPersistedAppStateSnapshot } from '../../src/store/exportable-state';
 import { selectNewSinceLastScanCount, useAppStore } from '../../src/store/app-store';
-import type { NightModePreference, PersistedAppState } from '../../src/types/app-state';
+import type { NightModePreference } from '../../src/types/app-state';
 
 function SettingRow({
   label,
+  description,
   value,
   onValueChange,
   disabled = false,
 }: {
   label: string;
+  description?: string;
   value: boolean;
   onValueChange: () => void;
   disabled?: boolean;
@@ -36,7 +40,10 @@ function SettingRow({
 
   return (
     <View style={[styles.settingRow, disabled && styles.settingRowDisabled]}>
-      <Text style={[styles.settingLabel, { color: colors.ink }]}>{label}</Text>
+      <View style={styles.settingCopy}>
+        <Text style={[styles.settingLabel, { color: colors.ink }]}>{label}</Text>
+        {description ? <Text style={[styles.settingDescription, { color: colors.mutedInk }]}>{description}</Text> : null}
+      </View>
       <Switch disabled={disabled} value={value} onValueChange={onValueChange} trackColor={{ true: colors.progress }} />
     </View>
   );
@@ -78,6 +85,32 @@ function NightModePicker({
   );
 }
 
+function ThemePreviewCard() {
+  const { colors, isDark } = useAppTheme();
+
+  return (
+    <View style={[styles.themePreviewCard, { backgroundColor: colors.stageCard, borderColor: isDark ? colors.outline : 'transparent' }]}>
+      <View style={styles.themePreviewHeader}>
+        <Text style={[styles.themePreviewTitle, { color: colors.white }]}>Live theme preview</Text>
+        <View style={[styles.themePreviewPill, { backgroundColor: colors.highlight }]}>
+          <Text style={styles.themePreviewPillLabel}>Queue</Text>
+        </View>
+      </View>
+      <View style={[styles.themePreviewSurface, { backgroundColor: colors.cardGlass }]}>
+        <Text style={[styles.themePreviewSurfaceTitle, { color: colors.white }]}>12 left in this pass</Text>
+        <Text style={[styles.themePreviewSurfaceBody, { color: isDark ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
+          Theme changes update the queue cards, glass surfaces, and text contrast instantly.
+        </Text>
+      </View>
+      <View style={styles.themePreviewSwatches}>
+        <View style={[styles.themePreviewSwatch, { backgroundColor: colors.keep }]} />
+        <View style={[styles.themePreviewSwatch, { backgroundColor: colors.highlight }]} />
+        <View style={[styles.themePreviewSwatch, { backgroundColor: colors.delete }]} />
+      </View>
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
   const { colors, isDark, isNightMode } = useAppTheme();
@@ -86,6 +119,8 @@ export default function SettingsScreen() {
   const queueOrder = useAppStore((state) => state.queueOrder);
   const actionLogs = useAppStore((state) => state.actionLogs);
   const analyticsEvents = useAppStore((state) => state.analyticsEvents);
+  const historyByDay = useAppStore((state) => state.historyByDay);
+  const recentSessionSummaries = useAppStore((state) => state.recentSessionSummaries);
   const recentMoveTargets = useAppStore((state) => state.recentMoveTargets);
   const scanState = useAppStore((state) => state.scanState);
   const scanMode = useAppStore((state) => state.scanMode);
@@ -106,7 +141,34 @@ export default function SettingsScreen() {
   const [hasManageMediaAccess, setHasManageMediaAccess] = useState(false);
   const [busyNotificationKey, setBusyNotificationKey] = useState<'weeklySummaryNotificationsEnabled' | 'storageAlertsEnabled' | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
+  const [selectedHistoryDateKey, setSelectedHistoryDateKey] = useState<string | null>(null);
   const nativeDirectDeleteReady = hasNativeDirectDeleteSupport();
+  const historySummary = useMemo(() => {
+    const entries = Object.values(historyByDay);
+
+    return entries.reduce(
+      (summary, entry) => ({
+        reviewedCount: summary.reviewedCount + entry.reviewedCount,
+        deletedCount: summary.deletedCount + entry.deletedCount,
+        sessionsCompleted: summary.sessionsCompleted + entry.sessionsCompleted,
+        storageRecoveredBytes: summary.storageRecoveredBytes + entry.storageRecoveredBytes,
+      }),
+      {
+        reviewedCount: 0,
+        deletedCount: 0,
+        sessionsCompleted: 0,
+        storageRecoveredBytes: 0,
+      }
+    );
+  }, [historyByDay]);
+  const fallbackHistoryDateKey = recentSessionSummaries[0]?.completedAt.slice(0, 10) ?? null;
+  const selectedHistoryEntry = historyByDay[selectedHistoryDateKey ?? fallbackHistoryDateKey ?? ''];
+
+  useEffect(() => {
+    if (!selectedHistoryDateKey && fallbackHistoryDateKey) {
+      setSelectedHistoryDateKey(fallbackHistoryDateKey);
+    }
+  }, [fallbackHistoryDateKey, selectedHistoryDateKey]);
 
   const refreshManageMediaState = async (showFeedback = false) => {
     if (!supportsManageMediaAccess()) {
@@ -183,42 +245,7 @@ export default function SettingsScreen() {
     });
 
     try {
-      const {
-        hasHydrated: _hasHydrated,
-        scanNonce: _scanNonce,
-        setHasHydrated: _setHasHydrated,
-        setPermissionState: _setPermissionState,
-        setNotificationPermissionState: _setNotificationPermissionState,
-        beginQuickSession: _beginQuickSession,
-        setActiveFilter: _setActiveFilter,
-        setSortMode: _setSortMode,
-        setNightModePreference: _setNightModePreference,
-        beginScan: _beginScan,
-        receiveScanChunk: _receiveScanChunk,
-        completeScan: _completeScan,
-        failScan: _failScan,
-        keepCurrentFile: _keepCurrentFile,
-        skipCurrentFile: _skipCurrentFile,
-        undoLastAction: _undoLastAction,
-        pruneExpiredUndoEntries: _pruneExpiredUndoEntries,
-        dismissMilestone: _dismissMilestone,
-        commitDeleteSuccess: _commitDeleteSuccess,
-        commitMoveSuccess: _commitMoveSuccess,
-        recordDeleteFailure: _recordDeleteFailure,
-        recordMoveFailure: _recordMoveFailure,
-        recordPreviewOpen: _recordPreviewOpen,
-        requestRescan: _requestRescan,
-        toggleSetting: _toggleSetting,
-        markGestureTutorialSeen: _markGestureTutorialSeen,
-        setStorageWarning: _setStorageWarning,
-        recordLowStorageNotificationSent: _recordLowStorageNotificationSent,
-        resetOnboarding: _resetOnboarding,
-        resetApp: _resetApp,
-        dismissSummary: _dismissSummary,
-        ...persistedState
-      } = useAppStore.getState();
-
-      const exportFile = exportDebugSnapshot(persistedState as PersistedAppState);
+      const exportFile = exportDebugSnapshot(getPersistedAppStateSnapshot(useAppStore.getState()));
 
       await Share.share({
         title: 'YeetFiles debug export',
@@ -332,12 +359,42 @@ export default function SettingsScreen() {
 
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Preferences</Text>
-          <SettingRow label="Haptics" value={settings.hapticsEnabled} onValueChange={() => toggleSetting('hapticsEnabled')} />
-          <SettingRow label="Touch sounds" value={settings.soundEnabled} onValueChange={() => toggleSetting('soundEnabled')} />
-          <SettingRow label="Animations" value={settings.animationsEnabled} onValueChange={() => toggleSetting('animationsEnabled')} />
-          <SettingRow label="Follow system theme" value={settings.followSystemTheme} onValueChange={() => toggleSetting('followSystemTheme')} />
-          <SettingRow label="Gesture hints" value={settings.showGestureHints} onValueChange={() => toggleSetting('showGestureHints')} />
-          <SettingRow label="Debug logging" value={settings.debugLoggingEnabled} onValueChange={() => toggleSetting('debugLoggingEnabled')} />
+          <SettingRow
+            label="Haptics"
+            description="Swipe thresholds, undo, and review actions feel tactile."
+            value={settings.hapticsEnabled}
+            onValueChange={() => toggleSetting('hapticsEnabled')}
+          />
+          <SettingRow
+            label="Touch sounds"
+            description="Keeps button presses audible if you want stronger feedback."
+            value={settings.soundEnabled}
+            onValueChange={() => toggleSetting('soundEnabled')}
+          />
+          <SettingRow
+            label="Animations"
+            description="Controls queue motion, preview transitions, and celebration moments."
+            value={settings.animationsEnabled}
+            onValueChange={() => toggleSetting('animationsEnabled')}
+          />
+          <SettingRow
+            label="Follow system theme"
+            description="Lets YeetFiles respect Android light and dark appearance."
+            value={settings.followSystemTheme}
+            onValueChange={() => toggleSetting('followSystemTheme')}
+          />
+          <SettingRow
+            label="Gesture hints"
+            description="Shows the in-card keep and delete hints while you are still learning the flow."
+            value={settings.showGestureHints}
+            onValueChange={() => toggleSetting('showGestureHints')}
+          />
+          <SettingRow
+            label="Debug logging"
+            description="Stores local reproduction logs for support and diagnostics exports."
+            value={settings.debugLoggingEnabled}
+            onValueChange={() => toggleSetting('debugLoggingEnabled')}
+          />
           <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
             Haptics, touch sounds, and motion apply immediately. Turning off debug logging clears detailed local logs and stops new reproduction logs from accumulating.
           </Text>
@@ -346,6 +403,7 @@ export default function SettingsScreen() {
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Theme and low light</Text>
           <NightModePicker value={settings.nightModePreference} onChange={setNightModePreference} />
+          <ThemePreviewCard />
           <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
             Night mode pushes the queue into a dimmer ultra-dark look. `Auto` follows late-evening hours or Android dark appearance.
           </Text>
@@ -356,12 +414,14 @@ export default function SettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Notifications</Text>
           <SettingRow
             label="Weekly summary reminder"
+            description="A gentle nudge to come back for another short cleanup pass."
             value={settings.weeklySummaryNotificationsEnabled}
             onValueChange={() => void toggleNotificationSetting('weeklySummaryNotificationsEnabled')}
             disabled={busyNotificationKey !== null}
           />
           <SettingRow
             label="Low-storage alerts"
+            description="Warns you when device storage is genuinely getting tight."
             value={settings.storageAlertsEnabled}
             onValueChange={() => void toggleNotificationSetting('storageAlertsEnabled')}
             disabled={busyNotificationKey !== null}
@@ -383,7 +443,9 @@ export default function SettingsScreen() {
                 tone: 'info',
                 message: 'Fresh queue requested. YeetFiles will scan in the background.',
               });
-              requestRescan();
+              requestRescan({
+                source: 'settings',
+              });
               router.replace(ROUTES.queue);
             }}
           />
@@ -396,6 +458,35 @@ export default function SettingsScreen() {
             </Text>
           ) : null}
           <Button
+            label="Clean rebuild review state"
+            variant="secondary"
+            onPress={() => {
+              Alert.alert(
+                'Clean rebuild review state?',
+                'This keeps your long-term history, but clears the current per-photo review state and rebuilds the queue from the device library.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Rebuild',
+                    style: 'destructive',
+                    onPress: () => {
+                      setStatusFeedback({
+                        tone: 'info',
+                        message: 'Clean rebuild requested. YeetFiles is rebuilding from scratch.',
+                      });
+                      requestRescan({
+                        resetSession: true,
+                        clearReviewState: true,
+                        source: 'settings',
+                      });
+                      router.replace(ROUTES.queue);
+                    },
+                  },
+                ]
+              );
+            }}
+          />
+          <Button
             label="Reset onboarding"
             variant="secondary"
             onPress={() => {
@@ -403,6 +494,40 @@ export default function SettingsScreen() {
               router.replace(ROUTES.welcome);
             }}
           />
+        </View>
+
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
+          <Text style={[styles.sectionTitle, { color: colors.ink }]}>Last 90 days</Text>
+          <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
+            Durable review history now survives app restarts. Tap a day to inspect the cleanup work that happened.
+          </Text>
+          <HistoryHeatmap historyByDay={historyByDay} selectedDateKey={selectedHistoryDateKey} onSelectDateKey={setSelectedHistoryDateKey} />
+          <View style={styles.historySummaryGrid}>
+            <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Reviewed</Text>
+              <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.reviewedCount}</Text>
+            </View>
+            <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Deleted</Text>
+              <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.deletedCount}</Text>
+            </View>
+            <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Sessions</Text>
+              <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.sessionsCompleted}</Text>
+            </View>
+            <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Recovered</Text>
+              <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{formatBytes(historySummary.storageRecoveredBytes)}</Text>
+            </View>
+          </View>
+          {selectedHistoryEntry ? (
+            <View style={[styles.historyDetailCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historyDetailTitle, { color: colors.ink }]}>{formatDayLabel(selectedHistoryEntry.dateKey)}</Text>
+              <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
+                {selectedHistoryEntry.reviewedCount} reviewed, {selectedHistoryEntry.deletedCount} deleted, {selectedHistoryEntry.sessionsCompleted} sessions completed, {formatBytes(selectedHistoryEntry.storageRecoveredBytes)} recovered.
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {supportsManageMediaAccess() ? (
@@ -535,13 +660,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
   },
   settingRowDisabled: {
     opacity: 0.55,
   },
+  settingCopy: {
+    flex: 1,
+    gap: 2,
+  },
   settingLabel: {
     fontFamily: typography.body,
     fontSize: 16,
+  },
+  settingDescription: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 20,
   },
   modeRow: {
     flexDirection: 'row',
@@ -569,6 +704,84 @@ const styles = StyleSheet.create({
   diagnosticLine: {
     fontFamily: typography.body,
     fontSize: 15,
+  },
+  themePreviewCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  themePreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  themePreviewTitle: {
+    fontFamily: typography.bold,
+    fontSize: 15,
+  },
+  themePreviewPill: {
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  themePreviewPillLabel: {
+    color: '#08111D',
+    fontFamily: typography.bold,
+    fontSize: 11,
+    textTransform: 'uppercase',
+  },
+  themePreviewSurface: {
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: 4,
+  },
+  themePreviewSurfaceTitle: {
+    fontFamily: typography.bold,
+    fontSize: 16,
+  },
+  themePreviewSurfaceBody: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  themePreviewSwatches: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  themePreviewSwatch: {
+    flex: 1,
+    height: 16,
+    borderRadius: radius.pill,
+  },
+  historySummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  historySummaryCard: {
+    flexBasis: '48%',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: 4,
+  },
+  historySummaryLabel: {
+    fontFamily: typography.medium,
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
+  historySummaryValue: {
+    fontFamily: typography.display,
+    fontSize: 22,
+  },
+  historyDetailCard: {
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: 4,
+  },
+  historyDetailTitle: {
+    fontFamily: typography.bold,
+    fontSize: 16,
   },
   dangerSection: {},
 });

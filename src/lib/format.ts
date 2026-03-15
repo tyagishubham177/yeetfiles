@@ -16,7 +16,7 @@ export function formatCompactDate(value: string | null): string {
     return 'Unknown date';
   }
 
-  return new Intl.DateTimeFormat('en-IN', {
+  return new Intl.DateTimeFormat(undefined, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -28,13 +28,59 @@ export function formatDateTime(value: string | null): string {
     return 'Unknown';
   }
 
-  return new Intl.DateTimeFormat('en-IN', {
+  return new Intl.DateTimeFormat(undefined, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value));
+}
+
+export function formatDayLabel(value: string | null): string {
+  if (!value) {
+    return 'Unknown day';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(value));
+}
+
+export function formatWeekdayLabel(value: string | null): string {
+  if (!value) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+  }).format(new Date(value));
+}
+
+export function formatRelativeDate(value: string | null): string {
+  if (!value) {
+    return 'Unknown date';
+  }
+
+  const target = new Date(value).getTime();
+  if (Number.isNaN(target)) {
+    return 'Unknown date';
+  }
+
+  const diffMs = target - Date.now();
+  const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000));
+  const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+
+  if (Math.abs(diffDays) < 1) {
+    return 'Today';
+  }
+
+  if (Math.abs(diffDays) < 30) {
+    return relativeFormatter.format(diffDays, 'day');
+  }
+
+  return formatCompactDate(value);
 }
 
 export function formatDimensions(width: number, height: number): string {

@@ -1,3 +1,5 @@
+import type { ReviewActionSource } from './file-item';
+
 export type ReviewAction = 'keep' | 'delete' | 'skip' | 'move' | 'open' | 'rescan' | 'undo';
 export type ActionResult = 'success' | 'failed' | 'cancelled';
 
@@ -9,6 +11,7 @@ export type ActionLog = {
   timestamp: string;
   sessionId: string | null;
   bytesDelta: number;
+  source: ReviewActionSource;
   errorCode?: string;
   errorMessage?: string;
 };

@@ -17,6 +17,7 @@ export type SessionStats = {
 
 export type SessionSummary = {
   sessionId: string;
+  completedAt: string;
   reviewedCount: number;
   keptCount: number;
   deletedCount: number;
@@ -92,6 +93,19 @@ export type LowStorageWarning = {
   detectedAt: string;
 };
 
+export type DailyHistoryEntry = {
+  dateKey: string;
+  reviewedCount: number;
+  keptCount: number;
+  deletedCount: number;
+  skippedCount: number;
+  movedCount: number;
+  storageRecoveredBytes: number;
+  sessionsCompleted: number;
+  firstActionAt: string | null;
+  lastActionAt: string | null;
+};
+
 export type PersistedAppState = {
   permissionState: PermissionState;
   notificationPermissionState: NotificationPermissionState;
@@ -104,7 +118,10 @@ export type PersistedAppState = {
   filesById: Record<string, FileItem>;
   actionLogs: ActionLog[];
   analyticsEvents: AnalyticsEvent[];
+  historyByDay: Record<string, DailyHistoryEntry>;
+  recentSessionSummaries: SessionSummary[];
   lastCompletedScanAt: string | null;
+  activeScanStartedAt: string | null;
   scanState: ScanState;
   scanMode: ScanMode;
   scanProgressLoaded: number;
@@ -117,6 +134,7 @@ export type PersistedAppState = {
   lowStorageWarning: LowStorageWarning | null;
   lastStorageCheckAt: string | null;
   lastLowStorageNotificationAt: string | null;
+  lastCleanRebuildAt: string | null;
   sessionId: string | null;
   sessionStats: SessionStats;
   sessionSummary: SessionSummary | null;

@@ -10,20 +10,22 @@ import { useAppStore } from '../store/app-store';
 const LOW_STORAGE_NOTIFICATION_COOLDOWN_MS = 18 * 60 * 60 * 1000;
 
 export function useAppHealthMonitor() {
-  const permissionState = useAppStore((state) => state.permissionState);
-  const notificationPermissionState = useAppStore((state) => state.notificationPermissionState);
-  const lowStorageWarning = useAppStore((state) => state.lowStorageWarning);
-  const storageAlertsEnabled = useAppStore((state) => state.settings.storageAlertsEnabled);
-  const lastLowStorageNotificationAt = useAppStore((state) => state.lastLowStorageNotificationAt);
-  const setPermissionState = useAppStore((state) => state.setPermissionState);
-  const setStorageWarning = useAppStore((state) => state.setStorageWarning);
-  const recordLowStorageNotificationSent = useAppStore((state) => state.recordLowStorageNotificationSent);
   const lastPromptedRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function refreshAppHealth() {
+      const {
+        permissionState,
+        notificationPermissionState,
+        lowStorageWarning,
+        lastLowStorageNotificationAt,
+        settings,
+        setPermissionState,
+        setStorageWarning,
+        recordLowStorageNotificationSent,
+      } = useAppStore.getState();
       const nextPermissionState = await getMediaPermissionState().catch(() => 'blocked' as const);
       if (active && nextPermissionState !== permissionState) {
         setPermissionState(nextPermissionState);
@@ -60,7 +62,7 @@ export function useAppHealthMonitor() {
       const lastNotificationAt = lastLowStorageNotificationAt ? Date.parse(lastLowStorageNotificationAt) : 0;
       const cooldownExpired = Date.now() - lastNotificationAt >= LOW_STORAGE_NOTIFICATION_COOLDOWN_MS;
 
-      if (storageAlertsEnabled && notificationPermissionState === 'granted' && cooldownExpired) {
+      if (settings.storageAlertsEnabled && notificationPermissionState === 'granted' && cooldownExpired) {
         await sendLowStorageNotificationAsync(storage.freeBytes, storage.thresholdBytes).catch(() => null);
         recordLowStorageNotificationSent();
       }
@@ -78,16 +80,7 @@ export function useAppHealthMonitor() {
       active = false;
       subscription.remove();
     };
-  }, [
-    lastLowStorageNotificationAt,
-    lowStorageWarning,
-    notificationPermissionState,
-    permissionState,
-    recordLowStorageNotificationSent,
-    setPermissionState,
-    setStorageWarning,
-    storageAlertsEnabled,
-  ]);
+  }, []);
 
-  return lowStorageWarning;
+  return useAppStore((state) => state.lowStorageWarning);
 }

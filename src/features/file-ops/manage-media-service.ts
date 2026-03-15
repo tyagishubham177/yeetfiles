@@ -1,27 +1,10 @@
 import { Platform } from 'react-native';
-import { requireNativeModule } from 'expo-modules-core';
-
-type ExpoMediaLibraryManageMediaModule = {
-  canManageMediaAsync?: () => Promise<boolean>;
-  presentManageMediaPermissionPickerAsync?: () => Promise<boolean>;
-  deleteAssetsDirectAsync?: (assetIds: string[]) => Promise<boolean>;
-};
-
-let nativeModule: ExpoMediaLibraryManageMediaModule | null = null;
-
-function getNativeModule() {
-  if (nativeModule) {
-    return nativeModule;
-  }
-
-  try {
-    nativeModule = requireNativeModule<ExpoMediaLibraryManageMediaModule>('ExpoMediaLibrary');
-  } catch {
-    nativeModule = {};
-  }
-
-  return nativeModule;
-}
+import {
+  canManageMediaAsync as callDirectDeleteManageMediaCheck,
+  deleteAssetsDirectAsync as callDirectDeleteAssets,
+  isExpoDirectDeleteModuleAvailable,
+  presentManageMediaPermissionPickerAsync as presentDirectDeletePermissionPickerAsync,
+} from '../../../modules/expo-direct-delete/src';
 
 export function supportsManageMediaAccess() {
   return Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 31;
@@ -32,7 +15,7 @@ export function hasNativeDirectDeleteSupport() {
     return false;
   }
 
-  return typeof getNativeModule().deleteAssetsDirectAsync === 'function';
+  return isExpoDirectDeleteModuleAvailable;
 }
 
 export async function canManageMediaAsync() {
@@ -40,13 +23,8 @@ export async function canManageMediaAsync() {
     return false;
   }
 
-  const module = getNativeModule();
-  if (!module.canManageMediaAsync) {
-    return false;
-  }
-
   try {
-    return await module.canManageMediaAsync();
+    return await callDirectDeleteManageMediaCheck();
   } catch {
     return false;
   }
@@ -57,13 +35,8 @@ export async function presentManageMediaPermissionPickerAsync() {
     return false;
   }
 
-  const module = getNativeModule();
-  if (!module.presentManageMediaPermissionPickerAsync) {
-    return false;
-  }
-
   try {
-    return await module.presentManageMediaPermissionPickerAsync();
+    return await presentDirectDeletePermissionPickerAsync();
   } catch {
     return false;
   }
@@ -74,10 +47,5 @@ export async function deleteAssetsDirectAsync(assetIds: string[]) {
     return false;
   }
 
-  const module = getNativeModule();
-  if (!module.deleteAssetsDirectAsync) {
-    return false;
-  }
-
-  return await module.deleteAssetsDirectAsync(assetIds);
+  return await callDirectDeleteAssets(assetIds);
 }
