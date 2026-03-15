@@ -54,6 +54,7 @@ export type UndoEntry = {
   previousStatus: FileStatus;
   previousIsNewSinceLastScan: boolean;
   previousQueueOrder: string[];
+  previousRandomQueueOrder: string[];
   previousCurrentFileId: string | null;
   previousSessionStats: SessionStats;
   previousSessionSummary: SessionSummary | null;
@@ -115,6 +116,7 @@ export type PersistedAppState = {
   sortMode: SortMode;
   currentFileId: string | null;
   queueOrder: string[];
+  randomQueueOrder: string[];
   filesById: Record<string, FileItem>;
   actionLogs: ActionLog[];
   analyticsEvents: AnalyticsEvent[];
