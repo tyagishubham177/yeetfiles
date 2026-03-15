@@ -36,7 +36,8 @@ These docs now reflect a tighter product stance: fewer gates, fewer core actions
 4. [project-structure.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/project-structure.md)
 5. [phase-plan.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/phase-plan.md)
 6. [../phase/README.md](D:/Coding%20Projects/Codex%20All/YeetFiles/phase/README.md)
-7. [next-steps.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/next-steps.md)
+7. [../Improv/README.md](D:/Coding%20Projects/Codex%20All/YeetFiles/Improv/README.md)
+8. [next-steps.md](D:/Coding%20Projects/Codex%20All/YeetFiles/docs/next-steps.md)
 
 ### Quality and delivery
 
@@ -70,6 +71,7 @@ These docs now reflect a tighter product stance: fewer gates, fewer core actions
 - `project-structure.md`: planned code layout for the initial build
 - `phase-plan.md`: summary phase roadmap ordered by UX and trust impact
 - `../phase/`: detailed per-phase playbooks with streams, gates, and exit criteria
+- `../Improv/`: detailed improvement playbooks grouped to minimize native rebuilds
 - `testing.md`: test strategy and scenario coverage
 - `manual-test-matrix.md`: practical device validation checklist
 - `risk-register.md`: product, retention, and implementation risks
