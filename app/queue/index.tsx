@@ -501,6 +501,7 @@ export default function QueueScreen() {
                     current={currentFile}
                     nextItems={nextItems}
                     disabled={busy}
+                    pendingAction={isDeleting ? 'delete' : isMoving ? 'move' : null}
                     showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
                     onPress={openPreview}
                     onKeepGesture={() => keepCurrent('swipe')}
