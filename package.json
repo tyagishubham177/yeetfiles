@@ -22,7 +22,7 @@
     "ios": "npx expo run:ios",
     "dev:android:eas": "npx eas build --platform android --profile development",
     "dev:lan": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-expo.ps1 -HostMode lan -DevClient",
-    "apk:local": "npx eas build --platform android --profile localapk --local"
+    "apk:local": "powershell -ExecutionPolicy Bypass -File .\\scripts\\build-local-apk.ps1 -Variant Release"
   },
   "dependencies": {
     "@expo-google-fonts/dm-sans": "0.4.2",
