@@ -149,15 +149,23 @@ export default function SettingsScreen() {
     return entries.reduce(
       (summary, entry) => ({
         reviewedCount: summary.reviewedCount + entry.reviewedCount,
+        keptCount: summary.keptCount + entry.keptCount,
         deletedCount: summary.deletedCount + entry.deletedCount,
+        skippedCount: summary.skippedCount + entry.skippedCount,
+        movedCount: summary.movedCount + entry.movedCount,
         sessionsCompleted: summary.sessionsCompleted + entry.sessionsCompleted,
         storageRecoveredBytes: summary.storageRecoveredBytes + entry.storageRecoveredBytes,
+        activeDays: summary.activeDays + (entry.reviewedCount > 0 || entry.sessionsCompleted > 0 ? 1 : 0),
       }),
       {
         reviewedCount: 0,
+        keptCount: 0,
         deletedCount: 0,
+        skippedCount: 0,
+        movedCount: 0,
         sessionsCompleted: 0,
         storageRecoveredBytes: 0,
+        activeDays: 0,
       }
     );
   }, [historyByDay]);
@@ -499,7 +507,7 @@ export default function SettingsScreen() {
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>Last 90 days</Text>
           <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
-            Durable review history now survives app restarts. Tap a day to inspect the cleanup work that happened.
+            Durable review history now survives app restarts. Tap a day to inspect keeps, skips, deletes, and recovered storage.
           </Text>
           <HistoryHeatmap historyByDay={historyByDay} selectedDateKey={selectedHistoryDateKey} onSelectDateKey={setSelectedHistoryDateKey} />
           <View style={styles.historySummaryGrid}>
@@ -508,12 +516,24 @@ export default function SettingsScreen() {
               <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.reviewedCount}</Text>
             </View>
             <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Kept</Text>
+              <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.keptCount}</Text>
+            </View>
+            <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
               <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Deleted</Text>
               <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.deletedCount}</Text>
             </View>
             <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Skipped</Text>
+              <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.skippedCount}</Text>
+            </View>
+            <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
               <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Sessions</Text>
               <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.sessionsCompleted}</Text>
+            </View>
+            <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Active days</Text>
+              <Text style={[styles.historySummaryValue, { color: colors.ink }]}>{historySummary.activeDays}</Text>
             </View>
             <View style={[styles.historySummaryCard, { backgroundColor: colors.surfaceMuted }]}>
               <Text style={[styles.historySummaryLabel, { color: colors.mutedInk }]}>Recovered</Text>
@@ -524,7 +544,12 @@ export default function SettingsScreen() {
             <View style={[styles.historyDetailCard, { backgroundColor: colors.surfaceMuted }]}>
               <Text style={[styles.historyDetailTitle, { color: colors.ink }]}>{formatDayLabel(selectedHistoryEntry.dateKey)}</Text>
               <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
-                {selectedHistoryEntry.reviewedCount} reviewed, {selectedHistoryEntry.deletedCount} deleted, {selectedHistoryEntry.sessionsCompleted} sessions completed, {formatBytes(selectedHistoryEntry.storageRecoveredBytes)} recovered.
+                {selectedHistoryEntry.reviewedCount} reviewed, {selectedHistoryEntry.keptCount} kept, {selectedHistoryEntry.deletedCount} deleted,{' '}
+                {selectedHistoryEntry.skippedCount} skipped, {selectedHistoryEntry.movedCount} moved, {selectedHistoryEntry.sessionsCompleted} sessions
+                completed, {formatBytes(selectedHistoryEntry.storageRecoveredBytes)} recovered.
+              </Text>
+              <Text style={[styles.sectionHint, { color: colors.mutedInk }]}>
+                First action: {formatDateTime(selectedHistoryEntry.firstActionAt)}. Last action: {formatDateTime(selectedHistoryEntry.lastActionAt)}.
               </Text>
             </View>
           ) : null}

@@ -6,6 +6,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -28,6 +29,7 @@ type FileCardProps = {
   current: FileItem | null;
   nextItems: FileItem[];
   disabled?: boolean;
+  pendingAction?: 'delete' | 'move' | null;
   showHints?: boolean;
   onPress: () => void;
   onKeepGesture: () => void;
@@ -53,6 +55,7 @@ function FileCardComponent({
   current,
   nextItems,
   disabled = false,
+  pendingAction = null,
   showHints = true,
   onPress,
   onKeepGesture,
@@ -66,6 +69,8 @@ function FileCardComponent({
   const translateX = useSharedValue(0);
   const thresholdCrossed = useSharedValue(false);
   const shimmerOpacity = useSharedValue(0.2);
+  const pendingBadgeScale = useSharedValue(1);
+  const pendingBadgeOpacity = useSharedValue(0);
   const longPressTriggered = useRef(false);
   const [imageLoaded, setImageLoaded] = useState(false);
 
@@ -96,6 +101,27 @@ function FileCardComponent({
     );
   }, [imageLoaded, shimmerOpacity]);
 
+  useEffect(() => {
+    if (!pendingAction) {
+      pendingBadgeOpacity.value = withTiming(0, { duration: 120 });
+      pendingBadgeScale.value = 1;
+      return;
+    }
+
+    if (!animationsEnabled) {
+      pendingBadgeOpacity.value = 1;
+      pendingBadgeScale.value = 1;
+      return;
+    }
+
+    pendingBadgeOpacity.value = withTiming(1, { duration: 140 });
+    pendingBadgeScale.value = withRepeat(
+      withSequence(withTiming(1.04, { duration: 420 }), withTiming(0.98, { duration: 420 })),
+      -1,
+      false
+    );
+  }, [animationsEnabled, pendingAction, pendingBadgeOpacity, pendingBadgeScale]);
+
   const cardAnimatedStyle = useAnimatedStyle(() => {
     const rotate = animationsEnabled ? `${translateX.value / 18}deg` : '0deg';
 
@@ -114,6 +140,11 @@ function FileCardComponent({
 
   const skeletonStyle = useAnimatedStyle(() => ({
     opacity: shimmerOpacity.value,
+  }));
+
+  const pendingBadgeStyle = useAnimatedStyle(() => ({
+    opacity: pendingBadgeOpacity.value,
+    transform: [{ scale: pendingBadgeScale.value }],
   }));
 
   const finishSwipe = (direction: 'left' | 'right') => {
@@ -189,6 +220,7 @@ function FileCardComponent({
             accessibilityLabel={`${current.name}, ${current.bucketType}, ${current.isNewSinceLastScan ? 'new since last scan, ' : ''}tap for preview`}
             android_disableSound={!soundEnabled}
             delayLongPress={280}
+            disabled={disabled}
             onLongPress={
               onOpenSecondaryActions
                 ? () => {
@@ -222,6 +254,20 @@ function FileCardComponent({
             ) : null}
             <Animated.View pointerEvents="none" style={[styles.tint, styles.deleteTint, deleteTintStyle]} />
             <Animated.View pointerEvents="none" style={[styles.tint, styles.keepTint, keepTintStyle]} />
+            {pendingAction ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.pendingBadge,
+                  {
+                    backgroundColor: pendingAction === 'delete' ? 'rgba(231,111,81,0.92)' : 'rgba(76,151,232,0.92)',
+                  },
+                  pendingBadgeStyle,
+                ]}
+              >
+                <Text style={styles.pendingBadgeLabel}>{pendingAction === 'delete' ? 'Deleting...' : 'Moving...'}</Text>
+              </Animated.View>
+            ) : null}
 
             <View style={styles.infoStackLeft}>
               <OverlayChip label={current.albumTitle ?? 'Library'} />
@@ -235,6 +281,7 @@ function FileCardComponent({
                   accessibilityLabel="Open secondary actions"
                   accessibilityRole="button"
                   android_disableSound={!soundEnabled}
+                  disabled={disabled}
                   hitSlop={10}
                   onPress={onOpenSecondaryActions}
                   style={[styles.overflowButton, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.76)' : 'rgba(8,12,20,0.62)' }]}
@@ -352,6 +399,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: typography.bold,
     fontSize: 12,
+  },
+  pendingBadge: {
+    position: 'absolute',
+    top: '50%',
+    left: spacing.lg,
+    right: spacing.lg,
+    marginTop: -22,
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  pendingBadgeLabel: {
+    color: '#FFFFFF',
+    fontFamily: typography.bold,
+    fontSize: 14,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   overflowButton: {
     borderRadius: radius.pill,

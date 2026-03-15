@@ -256,6 +256,19 @@ function matchesFilter(file: FileItem, activeFilter: FilterType): boolean {
   return file.bucketType === activeFilter;
 }
 
+function resolveRestorableFilter(queueOrder: string[], filesById: Record<string, FileItem>, activeFilter: FilterType): FilterType {
+  if (!isFolderFilter(activeFilter)) {
+    return activeFilter;
+  }
+
+  const hasMatchingActionableFile = queueOrder.some((fileId) => {
+    const file = filesById[fileId];
+    return Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, activeFilter);
+  });
+
+  return hasMatchingActionableFile ? activeFilter : 'all';
+}
+
 function parseDateValue(value: string | null): number {
   if (!value) {
     return 0;
@@ -394,6 +407,23 @@ function resolveCurrentFileId(
 ): string | null {
   const visibleIds = getVisibleQueueIds({ queueOrder, filesById, activeFilter, sortMode });
   return visibleIds[0] ?? null;
+}
+
+function resolveCurrentFileIdOrFallback(
+  queueOrder: string[],
+  filesById: Record<string, FileItem>,
+  activeFilter: FilterType,
+  sortMode: SortMode,
+  currentFileId: string | null
+): string | null {
+  if (currentFileId) {
+    const currentFile = filesById[currentFileId];
+    if (currentFile && isActionableStatus(currentFile.status) && matchesFilter(currentFile, activeFilter)) {
+      return currentFileId;
+    }
+  }
+
+  return resolveCurrentFileId(queueOrder, filesById, activeFilter, sortMode);
 }
 
 function appendActionLog(
@@ -749,13 +779,15 @@ export const useAppStore = create<AppStore>()(
       completeScan: () =>
         set((state) => {
           const completedAt = nowIso();
+          const activeFilter = resolveRestorableFilter(state.queueOrder, state.filesById, state.activeFilter);
 
           return {
+            activeFilter,
             activeScanStartedAt: null,
             scanState: 'ready' as const,
             lastCompletedScanAt: completedAt,
             lastRescanSummary: buildRescanSummary(state, completedAt) ?? state.lastRescanSummary,
-            currentFileId: state.currentFileId ?? resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileIdOrFallback(state.queueOrder, state.filesById, activeFilter, state.sortMode, state.currentFileId),
           };
         }),
       failScan: (message) =>
@@ -1111,14 +1143,11 @@ export const useAppStore = create<AppStore>()(
         const filesById = typedPersisted?.filesById ?? currentState.filesById;
         const queueOrder = (typedPersisted?.queueOrder ?? currentState.queueOrder).filter((fileId) => Boolean(filesById[fileId]));
         const sortMode = normalizeSortMode(typedPersisted?.sortMode ?? currentState.sortMode);
-        const activeFilter = typedPersisted?.activeFilter ?? currentState.activeFilter;
+        const activeFilter = resolveRestorableFilter(queueOrder, filesById, typedPersisted?.activeFilter ?? currentState.activeFilter);
         const recentSessionSummaries = (typedPersisted?.recentSessionSummaries ?? currentState.recentSessionSummaries)
           .filter((entry) => isWithinRecentDays(entry.completedAt, 90))
           .slice(0, 12);
-        const currentFileId =
-          typedPersisted?.currentFileId && filesById[typedPersisted.currentFileId]
-            ? typedPersisted.currentFileId
-            : resolveCurrentFileId(queueOrder, filesById, activeFilter, sortMode);
+        const currentFileId = resolveCurrentFileIdOrFallback(queueOrder, filesById, activeFilter, sortMode, typedPersisted?.currentFileId ?? null);
 
         return {
           ...currentState,
