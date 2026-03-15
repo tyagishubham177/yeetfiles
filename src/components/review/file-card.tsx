@@ -1,9 +1,18 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
-import { Animated, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { radius, shadows, spacing, typography } from '../../constants/ui-tokens';
-import { formatBytes, formatCompactDate } from '../../lib/format';
+import { triggerInteractionFeedback } from '../../features/feedback/interaction-feedback';
+import { formatBytes, formatCompactDate, formatRelativeDate } from '../../lib/format';
 import { useAppTheme } from '../../lib/theme';
 import { useAppStore } from '../../store/app-store';
 import type { FileItem } from '../../types/file-item';
@@ -26,6 +35,20 @@ type FileCardProps = {
   onOpenSecondaryActions?: () => void;
 };
 
+function clamp(value: number, min: number, max: number): number {
+  'worklet';
+
+  return Math.min(Math.max(value, min), max);
+}
+
+function OverlayChip({ label }: { label: string }) {
+  return (
+    <View style={styles.overlayChip}>
+      <Text style={styles.overlayChipLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function FileCardComponent({
   current,
   nextItems,
@@ -38,97 +61,115 @@ function FileCardComponent({
 }: FileCardProps) {
   const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
   const soundEnabled = useAppStore((state) => state.settings.soundEnabled);
+  const hapticsEnabled = useAppStore((state) => state.settings.hapticsEnabled);
   const { colors, isNightMode } = useAppTheme();
-  const translateX = useRef(new Animated.Value(0)).current;
+  const translateX = useSharedValue(0);
+  const thresholdCrossed = useSharedValue(false);
+  const shimmerOpacity = useSharedValue(0.2);
   const longPressTriggered = useRef(false);
-  const interactionLocked = useRef(false);
-  const rotate = translateX.interpolate({
-    inputRange: [-width, 0, width],
-    outputRange: animationsEnabled ? ['-12deg', '0deg', '12deg'] : ['0deg', '0deg', '0deg'],
-    extrapolate: 'clamp',
-  });
-
-  const deleteTintOpacity = translateX.interpolate({
-    inputRange: [-SWIPE_VISUAL_LIMIT, -SWIPE_TRIGGER_DISTANCE, 0],
-    outputRange: [0.46, 0.26, 0],
-    extrapolate: 'clamp',
-  });
-
-  const keepTintOpacity = translateX.interpolate({
-    inputRange: [0, SWIPE_TRIGGER_DISTANCE, SWIPE_VISUAL_LIMIT],
-    outputRange: [0, 0.26, 0.46],
-    extrapolate: 'clamp',
-  });
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   useEffect(() => {
-    translateX.stopAnimation();
-    translateX.setValue(0);
-    interactionLocked.current = false;
+    translateX.value = 0;
+    thresholdCrossed.value = false;
     longPressTriggered.current = false;
-  }, [current?.id, translateX]);
+  }, [current?.id, thresholdCrossed, translateX]);
 
-  const finishSwipe = (direction: 'left' | 'right', onComplete: () => void) => {
-    interactionLocked.current = true;
+  useEffect(() => {
+    setImageLoaded(false);
+  }, [current?.id]);
 
-    if (!animationsEnabled) {
-      translateX.setValue(0);
-      interactionLocked.current = false;
-      onComplete();
+  useEffect(() => {
+    if (imageLoaded) {
+      shimmerOpacity.value = withTiming(0, {
+        duration: 180,
+      });
       return;
     }
 
-    Animated.timing(translateX, {
-      toValue: direction === 'left' ? -SWIPE_COMPLETE_DISTANCE : SWIPE_COMPLETE_DISTANCE,
-      duration: 170,
-      useNativeDriver: true,
-    }).start(() => {
-      translateX.setValue(0);
-      interactionLocked.current = false;
-      onComplete();
+    shimmerOpacity.value = withRepeat(
+      withTiming(0.58, {
+        duration: 850,
+      }),
+      -1,
+      true
+    );
+  }, [imageLoaded, shimmerOpacity]);
+
+  const cardAnimatedStyle = useAnimatedStyle(() => {
+    const rotate = animationsEnabled ? `${translateX.value / 18}deg` : '0deg';
+
+    return {
+      transform: [{ translateX: translateX.value }, { rotate }],
+    };
+  });
+
+  const deleteTintStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(Math.abs(Math.min(translateX.value, 0)) / SWIPE_VISUAL_LIMIT, 1)) * 0.48,
+  }));
+
+  const keepTintStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(Math.max(translateX.value, 0) / SWIPE_VISUAL_LIMIT, 1)) * 0.48,
+  }));
+
+  const skeletonStyle = useAnimatedStyle(() => ({
+    opacity: shimmerOpacity.value,
+  }));
+
+  const finishSwipe = (direction: 'left' | 'right') => {
+    'worklet';
+
+    const completeGesture = direction === 'left' ? onDeleteGesture : onKeepGesture;
+
+    if (!animationsEnabled) {
+      translateX.value = 0;
+      runOnJS(completeGesture)();
+      return;
+    }
+
+    translateX.value = withTiming(direction === 'left' ? -SWIPE_COMPLETE_DISTANCE : SWIPE_COMPLETE_DISTANCE, { duration: 180 }, (finished) => {
+      if (!finished) {
+        return;
+      }
+
+      translateX.value = 0;
+      thresholdCrossed.value = false;
+      runOnJS(completeGesture)();
     });
   };
 
-  const gesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .enabled(Boolean(current) && !disabled)
-        .activeOffsetX([-10, 10])
-        .onUpdate((event) => {
-          if (interactionLocked.current) {
-            return;
-          }
+  const gesture = Gesture.Pan()
+    .enabled(Boolean(current) && !disabled)
+    .activeOffsetX([-10, 10])
+    .onUpdate((event) => {
+      const clampedTranslation = clamp(event.translationX, -SWIPE_VISUAL_LIMIT, SWIPE_VISUAL_LIMIT);
+      translateX.value = clampedTranslation;
 
-          const clampedTranslation = Math.max(Math.min(event.translationX, SWIPE_VISUAL_LIMIT), -SWIPE_VISUAL_LIMIT);
-          translateX.setValue(clampedTranslation);
-        })
-        .onEnd((event) => {
-          if (interactionLocked.current) {
-            return;
-          }
+      const crossedThreshold = Math.abs(clampedTranslation) >= SWIPE_TRIGGER_DISTANCE;
+      if (crossedThreshold && !thresholdCrossed.value) {
+        thresholdCrossed.value = true;
+        runOnJS(triggerInteractionFeedback)('swipe_threshold', hapticsEnabled);
+      }
 
-          const absTranslationX = Math.abs(event.translationX);
-          const absVelocityX = Math.abs(event.velocityX);
-          const hasIntentionalVelocity = absTranslationX >= SWIPE_ESCAPE_DISTANCE && absVelocityX >= SWIPE_VELOCITY_TRIGGER;
-          const crossedTriggerDistance = absTranslationX >= SWIPE_TRIGGER_DISTANCE;
+      if (!crossedThreshold && thresholdCrossed.value) {
+        thresholdCrossed.value = false;
+      }
+    })
+    .onEnd((event) => {
+      const absTranslationX = Math.abs(event.translationX);
+      const absVelocityX = Math.abs(event.velocityX);
+      const hasIntentionalVelocity = absTranslationX >= SWIPE_ESCAPE_DISTANCE && absVelocityX >= SWIPE_VELOCITY_TRIGGER;
+      const crossedTriggerDistance = absTranslationX >= SWIPE_TRIGGER_DISTANCE;
 
-          if (crossedTriggerDistance || hasIntentionalVelocity) {
-            const direction = event.translationX < 0 || (event.translationX === 0 && event.velocityX < 0) ? 'left' : 'right';
-            finishSwipe(direction, direction === 'left' ? onDeleteGesture : onKeepGesture);
-            return;
-          }
+      if (crossedTriggerDistance || hasIntentionalVelocity) {
+        const direction = event.translationX < 0 || (event.translationX === 0 && event.velocityX < 0) ? 'left' : 'right';
+        finishSwipe(direction);
+        return;
+      }
 
-          if (!animationsEnabled) {
-            translateX.setValue(0);
-            return;
-          }
-
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-        }),
-    [animationsEnabled, current, disabled, onDeleteGesture, onKeepGesture, translateX]
-  );
+      thresholdCrossed.value = false;
+      translateX.value = withSpring(0);
+    });
 
   if (!current) {
     return <View style={[styles.placeholder, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)' }]} />;
@@ -142,7 +183,7 @@ function FileCardComponent({
         </View>
       ))}
       <GestureDetector gesture={gesture}>
-        <Animated.View style={[styles.card, { backgroundColor: colors.stageCard, transform: [{ translateX }, { rotate }] }]}>
+        <Animated.View style={[styles.card, { backgroundColor: colors.stageCard }, cardAnimatedStyle]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${current.name}, ${current.bucketType}, ${current.isNewSinceLastScan ? 'new since last scan, ' : ''}tap for preview`}
@@ -166,39 +207,57 @@ function FileCardComponent({
             }}
             style={styles.pressable}
           >
-            <Image source={{ uri: current.previewUri }} style={styles.image} resizeMode="cover" />
-            <Animated.View pointerEvents="none" style={[styles.tint, styles.deleteTint, { opacity: deleteTintOpacity }]} />
-            <Animated.View pointerEvents="none" style={[styles.tint, styles.keepTint, { opacity: keepTintOpacity }]} />
-            {onOpenSecondaryActions ? (
-              <Pressable
-                accessibilityLabel="Open secondary actions"
-                accessibilityRole="button"
-                android_disableSound={!soundEnabled}
-                hitSlop={10}
-                onPress={onOpenSecondaryActions}
-                style={[styles.overflowButton, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.72)' : 'rgba(8,12,20,0.58)' }]}
-              >
-                <Text style={[styles.overflowButtonLabel, { color: colors.white }]}>More</Text>
-              </Pressable>
+            <Image source={{ uri: current.previewUri }} style={styles.image} resizeMode="cover" onLoadEnd={() => setImageLoaded(true)} />
+            {!imageLoaded ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.skeleton,
+                  {
+                    backgroundColor: isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.12)',
+                  },
+                  skeletonStyle,
+                ]}
+              />
             ) : null}
+            <Animated.View pointerEvents="none" style={[styles.tint, styles.deleteTint, deleteTintStyle]} />
+            <Animated.View pointerEvents="none" style={[styles.tint, styles.keepTint, keepTintStyle]} />
+
+            <View style={styles.infoStackLeft}>
+              <OverlayChip label={current.albumTitle ?? 'Library'} />
+              {current.isNewSinceLastScan ? <OverlayChip label="New since last scan" /> : null}
+            </View>
+            <View style={styles.infoStackRight}>
+              <OverlayChip label={formatBytes(current.sizeBytes)} />
+              <OverlayChip label={formatRelativeDate(current.createdAt)} />
+              {onOpenSecondaryActions ? (
+                <Pressable
+                  accessibilityLabel="Open secondary actions"
+                  accessibilityRole="button"
+                  android_disableSound={!soundEnabled}
+                  hitSlop={10}
+                  onPress={onOpenSecondaryActions}
+                  style={[styles.overflowButton, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.76)' : 'rgba(8,12,20,0.62)' }]}
+                >
+                  <Text style={[styles.overflowButtonLabel, { color: colors.white }]}>More</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
             {showHints ? (
               <View style={styles.hintRow}>
                 <Text style={styles.hintLeft}>Delete</Text>
                 <Text style={styles.hintRight}>Keep</Text>
               </View>
             ) : null}
-            {current.isNewSinceLastScan ? (
-              <View style={[styles.newBadge, { backgroundColor: isNightMode ? 'rgba(217,162,59,0.82)' : 'rgba(243,180,63,0.9)' }]}>
-                <Text style={styles.newBadgeLabel}>New since last scan</Text>
-              </View>
-            ) : null}
-            <View style={[styles.metaStrip, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.62)' : 'rgba(8,12,20,0.55)' }]}>
+
+            <View style={[styles.metaStrip, { backgroundColor: isNightMode ? 'rgba(2,5,10,0.64)' : 'rgba(8,12,20,0.58)' }]}>
               <View style={styles.metaTextWrap}>
                 <Text style={[styles.fileName, { color: colors.white }]} numberOfLines={1}>
                   {current.name}
                 </Text>
                 <Text style={[styles.fileMeta, { color: isNightMode ? 'rgba(245,247,250,0.68)' : 'rgba(249,250,251,0.76)' }]}>
-                  {formatCompactDate(current.createdAt)} / {formatBytes(current.sizeBytes)}
+                  {formatCompactDate(current.createdAt)} / {current.albumTitle ?? 'Unsorted folder'}
                 </Text>
               </View>
               <Text style={[styles.bucket, { color: colors.white, backgroundColor: isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.12)' }]}>
@@ -258,6 +317,9 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  skeleton: {
+    ...StyleSheet.absoluteFillObject,
+  },
   tint: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -267,12 +329,32 @@ const styles = StyleSheet.create({
   keepTint: {
     backgroundColor: 'rgba(46,194,126,0.56)',
   },
-  overflowButton: {
+  infoStackLeft: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+    gap: spacing.xs,
+  },
+  infoStackRight: {
     position: 'absolute',
     top: spacing.md,
     right: spacing.md,
+    gap: spacing.xs,
+    alignItems: 'flex-end',
+  },
+  overlayChip: {
     borderRadius: radius.pill,
     backgroundColor: 'rgba(8,12,20,0.58)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  overlayChipLabel: {
+    color: '#FFFFFF',
+    fontFamily: typography.bold,
+    fontSize: 12,
+  },
+  overflowButton: {
+    borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
@@ -284,9 +366,9 @@ const styles = StyleSheet.create({
   },
   hintRow: {
     position: 'absolute',
-    top: spacing.md,
     left: spacing.md,
     right: spacing.md,
+    bottom: 94,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
@@ -308,29 +390,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
   },
-  newBadge: {
-    position: 'absolute',
-    top: 56,
-    left: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(243,180,63,0.9)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  newBadgeLabel: {
-    color: '#101418',
-    fontFamily: typography.bold,
-    fontSize: 12,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
   metaStrip: {
     position: 'absolute',
     left: spacing.md,
     right: spacing.md,
     bottom: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: 'rgba(8,12,20,0.55)',
     padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',

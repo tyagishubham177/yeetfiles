@@ -60,13 +60,22 @@ export async function deleteFileItem(file: FileItem): Promise<FileOpResult> {
     const canUseDirectDelete = hasNativeDirectDeleteSupport() && (await canManageMediaAsync());
 
     if (canUseDirectDelete) {
-      const deleted = await deleteAssetsDirectAsync([file.nativeAssetId]);
-      if (!deleted) {
-        throw new Error('Direct delete is unavailable in this build.');
+      try {
+        const deleted = await deleteAssetsDirectAsync([file.nativeAssetId]);
+        if (deleted) {
+          return {
+            ok: true,
+            action: 'delete',
+            fileId: file.id,
+            timestamp: nowIso(),
+          };
+        }
+      } catch {
+        // Fall through to the platform delete flow if the direct path declines the asset.
       }
-    } else {
-      await MediaLibrary.deleteAssetsAsync([file.nativeAssetId]);
     }
+
+    await MediaLibrary.deleteAssetsAsync([file.nativeAssetId]);
 
     return {
       ok: true,

@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, AppState, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
 
+import { QueueErrorBoundary } from '../../src/components/feedback/queue-error-boundary';
 import { ActionDock } from '../../src/components/review/action-dock';
 import { EmptyState } from '../../src/components/review/empty-state';
 import { FileCard } from '../../src/components/review/file-card';
@@ -22,9 +23,11 @@ import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
-import { canManageMediaAsync, hasNativeDirectDeleteSupport, supportsManageMediaAccess } from '../../src/features/file-ops/manage-media-service';
-import { getMoveTargets } from '../../src/features/file-ops/move-service';
 import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
+import { useDeleteFlow } from '../../src/hooks/queue/use-delete-flow';
+import { useDirectDeleteStatus } from '../../src/hooks/queue/use-direct-delete-status';
+import { useMoveFlow } from '../../src/hooks/queue/use-move-flow';
+import { useScanProgress } from '../../src/hooks/queue/use-scan-progress';
 import { useReviewActions } from '../../src/hooks/use-review-actions';
 import { useScanBootstrap } from '../../src/hooks/use-scan-bootstrap';
 import { formatBytes, formatDateTime } from '../../src/lib/format';
@@ -42,10 +45,9 @@ import {
   selectVisibleQueueCount,
   useAppStore,
 } from '../../src/store/app-store';
-import type { MoveTarget } from '../../src/types/app-state';
 import type { FilterType, SortMode } from '../../src/types/file-item';
 
-const SORT_OPTIONS: SortMode[] = ['smart', 'oldest_first', 'newest_first', 'largest_first', 'random'];
+const SORT_OPTIONS: SortMode[] = ['random', 'largest_first', 'oldest_first', 'newest_first'];
 
 export default function QueueScreen() {
   const router = useRouter();
@@ -64,6 +66,7 @@ export default function QueueScreen() {
   const scanProgressTotal = useAppStore((state) => state.scanProgressTotal);
   const currentScanNewFileCount = useAppStore((state) => state.currentScanNewFileCount);
   const scanError = useAppStore((state) => state.scanError);
+  const lastCompletedScanAt = useAppStore((state) => state.lastCompletedScanAt);
   const lastRescanSummary = useAppStore((state) => state.lastRescanSummary);
   const targetCount = useAppStore((state) => state.targetCount);
   const activeFilter = useAppStore((state) => state.activeFilter);
@@ -90,22 +93,46 @@ export default function QueueScreen() {
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [secondaryActionsOpen, setSecondaryActionsOpen] = useState(false);
-  const [moveSheetOpen, setMoveSheetOpen] = useState(false);
-  const [selectedMoveTarget, setSelectedMoveTarget] = useState<MoveTarget | null>(null);
-  const [availableMoveTargets, setAvailableMoveTargets] = useState<MoveTarget[]>([]);
-  const [pendingAlbumName, setPendingAlbumName] = useState('');
-  const [loadingMoveTargets, setLoadingMoveTargets] = useState(false);
-  const [moveErrorMessage, setMoveErrorMessage] = useState<string | null>(null);
   const [isCheckingPermission, setIsCheckingPermission] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
-  const [directDeleteStatus, setDirectDeleteStatus] = useState<'ready' | 'popup' | 'unavailable'>('unavailable');
+  const directDeleteStatus = useDirectDeleteStatus();
+  const { scanProgressRatio, scanProgressLabel } = useScanProgress(scanProgressLoaded, scanProgressTotal);
+  const {
+    moveSheetOpen,
+    selectedMoveTarget,
+    setSelectedMoveTarget,
+    availableMoveTargets,
+    pendingAlbumName,
+    setPendingAlbumName,
+    loadingMoveTargets,
+    moveErrorMessage,
+    openMoveFlow,
+    closeMoveFlow,
+    confirmMove,
+    setMoveErrorMessage,
+  } = useMoveFlow({
+    moveCurrent,
+    onStatusChange: setStatusFeedback,
+  });
+  const { requestDelete } = useDeleteFlow({
+    busy: isDeleting || isMoving,
+    currentFileId: currentFile?.id,
+    deleteCurrent,
+    onStatusChange: setStatusFeedback,
+  });
 
   useEffect(() => {
     if (sessionSummary) {
       router.replace(ROUTES.summary);
     }
   }, [router, sessionSummary]);
+
+  useEffect(() => {
+    if (sortMode === 'smart') {
+      setSortMode('random');
+    }
+  }, [setSortMode, sortMode]);
 
   const remainingCount = useMemo(() => {
     if (!targetCount) {
@@ -115,31 +142,12 @@ export default function QueueScreen() {
     return Math.max(targetCount - sessionStats.reviewedCount, 0);
   }, [sessionStats.reviewedCount, targetCount]);
 
-  const scanProgressRatio = useMemo(() => {
-    if (!scanProgressTotal || scanProgressTotal <= 0) {
-      return 0.08;
-    }
-
-    return Math.min(Math.max(scanProgressLoaded / scanProgressTotal, 0.08), 1);
-  }, [scanProgressLoaded, scanProgressTotal]);
-
-  const scanProgressLabel = useMemo(() => {
-    if (scanProgressTotal) {
-      return `${scanProgressLoaded} of ${scanProgressTotal} photos checked`;
-    }
-
-    if (scanProgressLoaded > 0) {
-      return `${scanProgressLoaded} photos checked so far`;
-    }
-
-    return 'Preparing your photo scan';
-  }, [scanProgressLoaded, scanProgressTotal]);
-
   const blocked = permissionState === 'blocked';
   const permissionMissing = permissionState === 'denied' || permissionState === 'blocked';
   const sessionLabel = getQuickSessionLabel((targetCount as 10 | 25 | 50 | null) ?? 10);
   const sortLabel = getSortLabel(sortMode);
   const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
+  const libraryEmpty = !currentFile && pendingQueueCount === 0 && scanState !== 'scanning' && Boolean(lastCompletedScanAt);
   const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
   const showTutorialCard = Boolean(currentFile && !settings.hasSeenGestureTutorial && sessionStats.reviewedCount === 0);
   const rescanStatusLabel =
@@ -193,37 +201,6 @@ export default function QueueScreen() {
     });
   }, [currentFile?.previewUri, nextItems]);
 
-  useEffect(() => {
-    if (!supportsManageMediaAccess()) {
-      setDirectDeleteStatus('unavailable');
-      return;
-    }
-
-    let active = true;
-
-    const refreshDirectDeleteStatus = async () => {
-      const granted = await canManageMediaAsync();
-      if (!active) {
-        return;
-      }
-
-      setDirectDeleteStatus(granted && hasNativeDirectDeleteSupport() ? 'ready' : 'popup');
-    };
-
-    void refreshDirectDeleteStatus();
-
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        void refreshDirectDeleteStatus();
-      }
-    });
-
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
-
   const retryPermission = async () => {
     setIsCheckingPermission(true);
     setStatusFeedback({
@@ -253,62 +230,28 @@ export default function QueueScreen() {
     }
   };
 
-  const requestDelete = async () => {
-    if (!currentFile || busy) {
-      return;
-    }
-
-    setStatusFeedback({
-      tone: 'info',
-      message: 'Sending the delete request...',
-    });
-    const result = await deleteCurrent();
-
-    if (!result.ok) {
-      if (result.errorCode === 'delete_cancelled') {
-        setStatusFeedback({
-          tone: 'info',
-          message: 'Delete cancelled. The photo stayed in the queue.',
-        });
-        return;
-      }
-
-      setStatusFeedback({
-        tone: 'error',
-        message: `Delete failed: ${result.message}`,
-      });
-      Alert.alert('Delete failed', result.message);
-      return;
-    }
-
-    setStatusFeedback({
-      tone: 'success',
-      message: 'Photo deleted. Session stats are updated.',
-    });
-  };
-
   const openPreview = () => {
     if (!currentFile) {
       return;
     }
 
-    recordPreviewOpen(currentFile.id);
-    triggerInteractionFeedback('preview_open', settings.hapticsEnabled);
+    recordPreviewOpen(currentFile.id, 'modal');
+    void triggerInteractionFeedback('preview_open', settings.hapticsEnabled);
     setPreviewOpen(true);
   };
 
   const handlePreviewKeep = () => {
     setPreviewOpen(false);
-    keepCurrent();
+    keepCurrent('modal');
   };
 
   const handlePreviewSkip = () => {
     setPreviewOpen(false);
-    skipCurrent();
+    skipCurrent('modal');
   };
 
   const handlePreviewDelete = () => {
-    void requestDelete();
+    void requestDelete('modal');
   };
 
   const shareCurrent = async () => {
@@ -351,78 +294,14 @@ export default function QueueScreen() {
     setSecondaryActionsOpen(true);
   };
 
-  const loadMoveTargets = async () => {
-    setLoadingMoveTargets(true);
-    setStatusFeedback({
-      tone: 'info',
-      message: 'Loading albums from your media library...',
-    });
-
-    try {
-      const targets = await getMoveTargets();
-      setAvailableMoveTargets(targets);
-      setStatusFeedback({
-        tone: 'success',
-        message: targets.length > 0 ? 'Albums ready. Pick a destination.' : 'No albums found yet. You can create a new one below.',
-      });
-    } catch {
-      setMoveErrorMessage('We could not load the media-library albums. Try again.');
-      setStatusFeedback({
-        tone: 'error',
-        message: 'We could not load the media-library albums. Try again.',
-      });
-    } finally {
-      setLoadingMoveTargets(false);
-    }
-  };
-
-  const confirmMove = async () => {
-    if (!selectedMoveTarget) {
-      setMoveErrorMessage('Choose a destination folder before confirming the move.');
-      setStatusFeedback({
-        tone: 'error',
-        message: 'Choose a destination folder before confirming the move.',
-      });
-      return;
-    }
-
-    setStatusFeedback({
-      tone: 'info',
-      message: `Moving photo to ${selectedMoveTarget.label}...`,
-    });
-    const result = await moveCurrent(selectedMoveTarget);
-
-    if (!result.ok) {
-      setMoveErrorMessage(result.message);
-      setStatusFeedback({
-        tone: 'error',
-        message: `Move failed: ${result.message}`,
-      });
-      return;
-    }
-
-    setMoveErrorMessage(null);
-    setMoveSheetOpen(false);
+  const openSecondaryMoveFlow = () => {
     setSecondaryActionsOpen(false);
-    setSelectedMoveTarget(result.target);
-    setPendingAlbumName('');
-    setStatusFeedback({
-      tone: 'success',
-      message: `Moved to ${result.target.label}`,
-    });
-  };
-
-  const openMoveFlow = () => {
-    setSecondaryActionsOpen(false);
-    setMoveErrorMessage(null);
-    setPendingAlbumName('');
-    setMoveSheetOpen(true);
-    void loadMoveTargets();
+    openMoveFlow();
   };
 
   const handleUndo = () => {
-    undoLastAction();
-    triggerInteractionFeedback('undo', settings.hapticsEnabled);
+    undoLastAction('undo');
+    void triggerInteractionFeedback('undo', settings.hapticsEnabled);
     setStatusFeedback({
       tone: 'success',
       message: 'Last safe action undone.',
@@ -435,7 +314,9 @@ export default function QueueScreen() {
       tone: 'info',
       message: 'Fresh scan queued. YeetFiles is rebuilding the queue in the background.',
     });
-    requestRescan();
+    requestRescan({
+      source: 'settings',
+    });
   };
 
   return (
@@ -443,7 +324,16 @@ export default function QueueScreen() {
       <StatusBar style="light" />
       <View style={[styles.backgroundGlowA, { backgroundColor: colors.stageGlow }]} />
       <View style={[styles.backgroundGlowB, { backgroundColor: isNightMode ? 'rgba(217,162,59,0.05)' : 'rgba(243,180,63,0.1)' }]} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[styles.content, !showTutorialCard && currentFile ? styles.contentWithFooter : null]}
+        refreshControl={
+          <RefreshControl
+            refreshing={scanState === 'scanning' && scanMode === 'rescan'}
+            onRefresh={handleRescanRequest}
+            tintColor={colors.highlight}
+          />
+        }
+      >
         <View style={styles.headerRow}>
           <Text style={[styles.queueTitle, { color: colors.white }]}>Queue</Text>
           <Pressable
@@ -515,170 +405,184 @@ export default function QueueScreen() {
         ) : null}
         {statusFeedback ? <StatusBanner message={statusFeedback.message} tone={statusFeedback.tone} /> : null}
 
-        {permissionMissing ? (
-          <PermissionPanel blocked={blocked} isRetrying={isCheckingPermission} onRetry={() => void retryPermission()} onOpenSettings={() => void Linking.openSettings()} />
-        ) : currentFile ? (
-          <>
-            <View style={styles.scanRow}>
-              <Text style={[styles.scanText, { color: isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
-                {scanState === 'scanning'
-                  ? scanMode === 'rescan'
-                    ? `Re-scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
-                    : `Scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
-                  : newSinceLastScanCount > 0
-                    ? `${newSinceLastScanCount} new since last scan`
-                    : 'Queue is live'}
-              </Text>
-              {scanError ? <Text style={[styles.scanError, { color: isNightMode ? '#F2C3B8' : '#FFC2B4' }]}>{scanError}</Text> : null}
-            </View>
-            {rescanStatusLabel ? (
-              <View
-                style={[
-                  styles.rescanInfoCard,
-                  {
-                    backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
-                    borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
-                  },
-                ]}
-              >
-                <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>{rescanStatusLabel}</Text>
-                <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
-                  Known photos stay matched to their earlier review state while this pass runs.
+        <QueueErrorBoundary>
+          {permissionMissing ? (
+            <PermissionPanel blocked={blocked} isRetrying={isCheckingPermission} onRetry={() => void retryPermission()} onOpenSettings={() => void Linking.openSettings()} />
+          ) : currentFile ? (
+            <>
+              <View style={styles.scanRow}>
+                <Text style={[styles.scanText, { color: isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
+                  {scanState === 'scanning'
+                    ? scanMode === 'rescan'
+                      ? `Re-scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
+                      : `Scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
+                    : newSinceLastScanCount > 0
+                      ? `${newSinceLastScanCount} new since last scan`
+                      : 'Queue is live'}
                 </Text>
+                {scanError ? <Text style={[styles.scanError, { color: isNightMode ? '#F2C3B8' : '#FFC2B4' }]}>{scanError}</Text> : null}
               </View>
-            ) : null}
-            {directDeleteStatus !== 'unavailable' ? (
-              <Pressable
-                android_disableSound={!settings.soundEnabled}
-                onPress={() => router.push(ROUTES.settings)}
-                style={({ pressed }) => [
-                  styles.directDeleteBanner,
-                  {
-                    backgroundColor:
-                      directDeleteStatus === 'ready'
-                        ? isNightMode
-                          ? 'rgba(76,151,232,0.14)'
-                          : 'rgba(60,145,230,0.18)'
-                        : isNightMode
-                          ? 'rgba(221,115,89,0.12)'
-                          : 'rgba(231,111,81,0.14)',
-                    borderColor:
-                      directDeleteStatus === 'ready'
-                        ? isNightMode
-                          ? 'rgba(76,151,232,0.24)'
-                          : 'rgba(60,145,230,0.28)'
-                        : isNightMode
-                          ? 'rgba(221,115,89,0.2)'
-                          : 'rgba(231,111,81,0.22)',
-                  },
-                  pressed && styles.linkPressed,
-                ]}
-              >
-                <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
-                  {directDeleteStatus === 'ready' ? 'Direct delete is active' : 'Android delete popup is still active'}
-                </Text>
-                <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
-                  {directDeleteStatus === 'ready'
-                    ? 'Deletes should go straight through without the extra confirmation.'
-                    : 'Open Settings to check special access or confirm this build includes the native delete engine.'}
-                </Text>
-              </Pressable>
-            ) : null}
-            {!rescanStatusLabel && lastRescanSummary ? (
-              <View
-                style={[
-                  styles.rescanInfoCard,
-                  {
-                    backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
-                    borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
-                  },
-                ]}
-              >
-                <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
-                  Last re-scan added {lastRescanSummary.newFileCount} new photo{lastRescanSummary.newFileCount === 1 ? '' : 's'}
-                </Text>
-                <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
-                  {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} stayed protected. {formatDateTime(lastRescanSummary.completedAt)}
-                </Text>
+              {rescanStatusLabel ? (
+                <View
+                  style={[
+                    styles.rescanInfoCard,
+                    {
+                      backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
+                      borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>{rescanStatusLabel}</Text>
+                  <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+                    Known photos stay matched to their earlier review state while this pass runs.
+                  </Text>
+                </View>
+              ) : null}
+              {directDeleteStatus !== 'unavailable' ? (
+                <Pressable
+                  android_disableSound={!settings.soundEnabled}
+                  onPress={() => router.push(ROUTES.settings)}
+                  style={({ pressed }) => [
+                    styles.directDeleteBanner,
+                    {
+                      backgroundColor:
+                        directDeleteStatus === 'ready'
+                          ? isNightMode
+                            ? 'rgba(76,151,232,0.14)'
+                            : 'rgba(60,145,230,0.18)'
+                          : isNightMode
+                            ? 'rgba(221,115,89,0.12)'
+                            : 'rgba(231,111,81,0.14)',
+                      borderColor:
+                        directDeleteStatus === 'ready'
+                          ? isNightMode
+                            ? 'rgba(76,151,232,0.24)'
+                            : 'rgba(60,145,230,0.28)'
+                          : isNightMode
+                            ? 'rgba(221,115,89,0.2)'
+                            : 'rgba(231,111,81,0.22)',
+                    },
+                    pressed && styles.linkPressed,
+                  ]}
+                >
+                  <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
+                    {directDeleteStatus === 'ready' ? 'Direct delete is active' : 'Android delete popup is still active'}
+                  </Text>
+                  <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+                    {directDeleteStatus === 'ready'
+                      ? 'Deletes should go straight through without the extra confirmation.'
+                      : 'Open Settings to check special access or confirm this build includes the native delete engine.'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {!rescanStatusLabel && lastRescanSummary ? (
+                <View
+                  style={[
+                    styles.rescanInfoCard,
+                    {
+                      backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
+                      borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
+                    Last re-scan added {lastRescanSummary.newFileCount} new photo{lastRescanSummary.newFileCount === 1 ? '' : 's'}
+                  </Text>
+                  <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+                    {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} stayed protected. {formatDateTime(lastRescanSummary.completedAt)}
+                  </Text>
+                </View>
+              ) : null}
+              <View style={styles.cardWrap}>
+                {showTutorialCard ? (
+                  <GestureTutorialCard onContinue={markGestureTutorialSeen} />
+                ) : (
+                  <FileCard
+                    current={currentFile}
+                    nextItems={nextItems}
+                    disabled={busy}
+                    showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
+                    onPress={openPreview}
+                    onKeepGesture={() => keepCurrent('swipe')}
+                    onDeleteGesture={() => void requestDelete('swipe')}
+                    onOpenSecondaryActions={openSecondaryActions}
+                  />
+                )}
               </View>
-            ) : null}
-            <View style={styles.cardWrap}>
-              {showTutorialCard ? (
-                <GestureTutorialCard onContinue={markGestureTutorialSeen} />
-              ) : (
-                <FileCard
-                  current={currentFile}
-                  nextItems={nextItems}
-                  disabled={busy}
-                  showHints={settings.showGestureHints && sessionStats.reviewedCount < 3}
-                  onPress={openPreview}
-                  onKeepGesture={keepCurrent}
-                  onDeleteGesture={() => void requestDelete()}
-                  onOpenSecondaryActions={openSecondaryActions}
-                />
-              )}
-            </View>
-            {showTutorialCard ? null : (
-              <ActionDock
-                onDelete={() => void requestDelete()}
-                onKeep={keepCurrent}
-                onSkip={skipCurrent}
-                onUndo={topUndoEntry ? handleUndo : undefined}
-                undoCount={undoEntries.length}
-                disabled={busy}
+            </>
+          ) : filterEmpty ? (
+            <View style={styles.emptyWrap}>
+              <EmptyState
+                title={`No ${activeFilterLabel.toLowerCase()} cards left`}
+                body="Try another filter or switch back to all photos to keep the session moving."
+                actionLabel="Show all photos"
+                onAction={() => setActiveFilter('all' as FilterType)}
               />
-            )}
-          </>
-        ) : filterEmpty ? (
-          <View style={styles.emptyWrap}>
-            <EmptyState
-              title={`No ${activeFilterLabel.toLowerCase()} cards left`}
-              body="Try another filter or switch back to all photos to keep the session moving."
-              actionLabel="Show all photos"
-              onAction={() => setActiveFilter('all' as FilterType)}
-            />
-          </View>
-        ) : scanState === 'scanning' ? (
-          <View style={styles.emptyWrap}>
-            <View
-              style={[
-                styles.scanLoadingCard,
-                {
-                  backgroundColor: colors.cardGlass,
-                  borderColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.09)',
-                },
-              ]}
-            >
-              <Text style={[styles.scanLoadingEyebrow, { color: isNightMode ? 'rgba(245,247,250,0.66)' : 'rgba(249,250,251,0.7)' }]}>
-                {scanMode === 'rescan' ? 'Re-scan in progress' : 'Scan in progress'}
-              </Text>
-              <Text style={[styles.scanLoadingTitle, { color: colors.white }]}>{scanProgressLabel}</Text>
-              <Text style={[styles.scanLoadingBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' }]}>
-                {scanMode === 'rescan'
-                  ? 'We are checking the library again and only adding photos we have not already matched.'
-                  : 'We are building your queue now. As soon as the first photo is ready, it will replace this panel.'}
-              </Text>
-              <View style={[styles.scanProgressTrack, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.08)' }]}>
-                <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%`, backgroundColor: colors.highlight }]} />
-              </View>
-              <Text style={[styles.scanLoadingHint, { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' }]}>
-                {scanProgressTotal ? `${Math.round(scanProgressRatio * 100)}% complete` : 'This can take longer on larger libraries.'}
-              </Text>
-              <View style={styles.scanLoadingActions}>
-                <Button label="Restart scan" onPress={handleRescanRequest} variant="secondary" />
+            </View>
+          ) : scanState === 'scanning' ? (
+            <View style={styles.emptyWrap}>
+              <View
+                style={[
+                  styles.scanLoadingCard,
+                  {
+                    backgroundColor: colors.cardGlass,
+                    borderColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.09)',
+                  },
+                ]}
+              >
+                <Text style={[styles.scanLoadingEyebrow, { color: isNightMode ? 'rgba(245,247,250,0.66)' : 'rgba(249,250,251,0.7)' }]}>
+                  {scanMode === 'rescan' ? 'Re-scan in progress' : 'Scan in progress'}
+                </Text>
+                <Text style={[styles.scanLoadingTitle, { color: colors.white }]}>{scanProgressLabel}</Text>
+                <Text style={[styles.scanLoadingBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' }]}>
+                  {scanMode === 'rescan'
+                    ? 'We are checking the library again and only adding photos we have not already matched.'
+                    : 'We are building your queue now. As soon as the first photo is ready, it will replace this panel.'}
+                </Text>
+                <View style={[styles.scanProgressTrack, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.08)' }]}>
+                  <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%`, backgroundColor: colors.highlight }]} />
+                </View>
+                <Text style={[styles.scanLoadingHint, { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' }]}>
+                  {scanProgressTotal ? `${Math.round(scanProgressRatio * 100)}% complete` : 'This can take longer on larger libraries.'}
+                </Text>
+                <View style={styles.scanLoadingActions}>
+                  <Button label="Restart scan" onPress={handleRescanRequest} variant="secondary" />
+                </View>
               </View>
             </View>
-          </View>
-        ) : (
-          <View style={styles.emptyWrap}>
-            <EmptyState title="No photo cards ready yet" body="Try a fresh scan, then come back into the queue." actionLabel="Scan again" onAction={handleRescanRequest} />
-          </View>
-        )}
+          ) : libraryEmpty ? (
+            <View style={styles.emptyWrap}>
+              <EmptyState
+                title="No photos found right now"
+                body="Your library looks clear or currently unavailable. Pull to refresh later if you add new photos outside the app."
+                actionLabel="Open Settings"
+                onAction={() => router.push(ROUTES.settings)}
+              />
+            </View>
+          ) : (
+            <View style={styles.emptyWrap}>
+              <EmptyState title="No photo cards ready yet" body="Try a fresh scan, then come back into the queue." actionLabel="Scan again" onAction={handleRescanRequest} />
+            </View>
+          )}
+        </QueueErrorBoundary>
       </ScrollView>
 
       {topUndoEntry ? (
-        <View style={styles.undoToastWrap}>
+        <View style={[styles.undoToastWrap, currentFile && !showTutorialCard ? styles.undoToastWithDock : null]}>
           <UndoToast entry={topUndoEntry} onUndo={handleUndo} />
+        </View>
+      ) : null}
+
+      {currentFile && !showTutorialCard ? (
+        <View style={styles.footerDock}>
+          <ActionDock
+            onDelete={() => void requestDelete('dock')}
+            onKeep={() => keepCurrent('dock')}
+            onSkip={() => skipCurrent('dock')}
+            onUndo={topUndoEntry ? handleUndo : undefined}
+            undoCount={undoEntries.length}
+            disabled={busy}
+          />
         </View>
       ) : null}
 
@@ -686,7 +590,7 @@ export default function QueueScreen() {
         visible={secondaryActionsOpen}
         fileName={currentFile?.name}
         onClose={() => setSecondaryActionsOpen(false)}
-        onMove={openMoveFlow}
+        onMove={openSecondaryMoveFlow}
         onShare={() => {
           setSecondaryActionsOpen(false);
           void shareCurrent();
@@ -702,7 +606,7 @@ export default function QueueScreen() {
         isLoadingTargets={loadingMoveTargets}
         isMoving={isMoving}
         errorMessage={moveErrorMessage}
-        onClose={() => setMoveSheetOpen(false)}
+        onClose={() => closeMoveFlow()}
         onPendingAlbumNameChange={setPendingAlbumName}
         onSelectTarget={(target) => {
           setSelectedMoveTarget(target);
@@ -755,6 +659,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     gap: spacing.md,
     minHeight: '100%',
+  },
+  contentWithFooter: {
+    paddingBottom: 176,
   },
   headerRow: {
     flexDirection: 'row',
@@ -874,7 +781,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   undoToastWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: spacing.md,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+  },
+  undoToastWithDock: {
+    bottom: 116,
+  },
+  footerDock: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.md,
   },
 });

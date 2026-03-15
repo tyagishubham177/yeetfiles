@@ -17,7 +17,15 @@ export function ActionDock({ onKeep, onDelete, onSkip, onUndo, undoCount = 0, di
   const { colors, isNightMode } = useAppTheme();
 
   return (
-    <View style={styles.wrap}>
+    <View
+      style={[
+        styles.wrap,
+        {
+          backgroundColor: isNightMode ? 'rgba(2,5,10,0.92)' : 'rgba(8,12,20,0.9)',
+          borderColor: isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.1)',
+        },
+      ]}
+    >
       <View style={styles.row}>
         <Button label="Delete" onPress={onDelete} variant="danger" disabled={disabled} style={styles.grow} />
         <Button label="Keep" onPress={onKeep} disabled={disabled} style={styles.grow} />
@@ -54,6 +62,9 @@ export function ActionDock({ onKeep, onDelete, onSkip, onUndo, undoCount = 0, di
 
 const styles = StyleSheet.create({
   wrap: {
+    borderRadius: 28,
+    borderWidth: 1,
+    padding: spacing.md,
     gap: spacing.sm,
   },
   row: {

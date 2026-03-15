@@ -95,6 +95,7 @@ export function buildSessionSummary(
 
   return {
     sessionId,
+    completedAt: endedAt,
     reviewedCount: stats.reviewedCount,
     keptCount: stats.keptCount,
     deletedCount: stats.deletedCount,

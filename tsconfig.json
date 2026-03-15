@@ -6,11 +6,13 @@
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
     "types": [
-      "react"
+      "react",
+      "node"
     ]
   },
   "include": [
     "app",
-    "src"
+    "src",
+    "modules"
   ]
 }

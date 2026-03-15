@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { UndoToast } from '../../src/components/review/undo-toast';
@@ -16,6 +16,7 @@ import { getQuickSessionLabel, selectNewSinceLastScanCount, selectTopUndoEntry, 
 export default function SummaryScreen() {
   const router = useRouter();
   const { colors, isDark } = useAppTheme();
+  const [entrance] = useState(() => new Animated.Value(0));
   const summary = useAppStore((state) => state.sessionSummary);
   const currentFileId = useAppStore((state) => state.currentFileId);
   const scanState = useAppStore((state) => state.scanState);
@@ -35,6 +36,15 @@ export default function SummaryScreen() {
     }
   }, [router, summary]);
 
+  useEffect(() => {
+    Animated.spring(entrance, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 65,
+    }).start();
+  }, [entrance]);
+
   if (!summary) {
     return null;
   }
@@ -45,6 +55,8 @@ export default function SummaryScreen() {
       : summary.reviewedCount >= 10
         ? 'You finished a full pass without the loop slowing down.'
         : 'You kept the session moving and stayed in control.';
+  const heroLabel = summary.storageFreedBytes > 0 ? 'Storage recovered' : 'Photos organized';
+  const heroValue = summary.storageFreedBytes > 0 ? formatBytes(summary.storageFreedBytes) : `${summary.reviewedCount}`;
 
   const continueCleaning = () => {
     dismissSummary();
@@ -52,7 +64,7 @@ export default function SummaryScreen() {
     if (currentFileId) {
       beginQuickSession((summary.targetCount as 10 | 25 | 50 | null) ?? 10, true);
     } else {
-      requestRescan({ resetSession: true });
+      requestRescan({ resetSession: true, source: 'settings' });
     }
 
     router.replace(ROUTES.queue);
@@ -60,13 +72,13 @@ export default function SummaryScreen() {
 
   const restartGame = () => {
     dismissSummary();
-    requestRescan({ resetSession: true });
+    requestRescan({ resetSession: true, source: 'settings' });
     router.replace(ROUTES.queue);
   };
 
   const handleUndo = () => {
-    undoLastAction();
-    triggerInteractionFeedback('undo', hapticsEnabled);
+    undoLastAction('undo');
+    void triggerInteractionFeedback('undo', hapticsEnabled);
     router.replace(ROUTES.queue);
   };
 
@@ -74,21 +86,36 @@ export default function SummaryScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.banner}>
+        <Animated.View
+          style={[
+            styles.banner,
+            {
+              opacity: entrance,
+              transform: [
+                {
+                  translateY: entrance.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [18, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={[styles.celebrationBadge, { backgroundColor: colors.highlight }]}>
+            <Text style={styles.celebrationBadgeLabel}>Session wrapped</Text>
+          </View>
           <Text style={[styles.eyebrow, { color: colors.progress }]}>{getQuickSessionLabel((summary.targetCount as 10 | 25 | 50 | null) ?? 10)} complete</Text>
           <Text style={[styles.title, { color: colors.ink }]}>{summary.reviewedCount} decisions made</Text>
           <Text style={[styles.subtitle, { color: colors.mutedInk }]}>{paceCopy}</Text>
+          <Text style={[styles.paceMeta, { color: colors.mutedInk }]}>Time: {formatDuration(summary.durationMs)}</Text>
           <View style={[styles.heroStat, { backgroundColor: isDark ? colors.stageCard : '#101418' }]}>
-            <Text style={styles.heroStatLabel}>Storage recovered</Text>
-            <Text style={[styles.heroStatValue, { color: colors.white }]}>{formatBytes(summary.storageFreedBytes)}</Text>
+            <Text style={styles.heroStatLabel}>{heroLabel}</Text>
+            <Text style={[styles.heroStatValue, { color: colors.white }]}>{heroValue}</Text>
           </View>
-        </View>
+        </Animated.View>
 
         <View style={styles.grid}>
-          <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
-            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Time</Text>
-            <Text style={[styles.statValue, { color: colors.ink }]}>{formatDuration(summary.durationMs)}</Text>
-          </View>
           <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }]}>
             <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Kept</Text>
             <Text style={[styles.statValue, { color: colors.ink }]}>{summary.keptCount}</Text>
@@ -101,8 +128,8 @@ export default function SummaryScreen() {
             <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Moved</Text>
             <Text style={[styles.statValue, { color: colors.ink }]}>{summary.movedCount}</Text>
           </View>
-          <View style={[styles.statCardWide, { backgroundColor: isDark ? colors.surfaceMuted : '#EAF2FA' }]}>
-            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Skipped for later</Text>
+          <View style={[styles.statCard, { backgroundColor: isDark ? colors.surfaceMuted : '#EAF2FA', borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <Text style={[styles.statLabel, { color: colors.mutedInk }]}>Skipped</Text>
             <Text style={[styles.statValue, { color: colors.ink }]}>{summary.skippedCount}</Text>
           </View>
         </View>
@@ -126,9 +153,7 @@ export default function SummaryScreen() {
               : 'Check the library again after you add new photos outside the app.'}
           </Text>
           {lastRescanSummary ? (
-            <Text style={[styles.rescanHint, { color: colors.mutedInk }]}>
-              Last re-scan added {lastRescanSummary.newFileCount} new and kept {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} out of the queue.
-            </Text>
+            <Text style={[styles.rescanHint, { color: colors.mutedInk }]}>Last re-scan added {lastRescanSummary.newFileCount} new and kept {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} out of the queue.</Text>
           ) : null}
         </View>
 
@@ -154,6 +179,19 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
     gap: spacing.md,
   },
+  celebrationBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  celebrationBadgeLabel: {
+    color: '#08111D',
+    fontFamily: typography.bold,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   eyebrow: {
     fontFamily: typography.medium,
     fontSize: 14,
@@ -169,6 +207,10 @@ const styles = StyleSheet.create({
     fontFamily: typography.body,
     fontSize: 17,
     lineHeight: 26,
+  },
+  paceMeta: {
+    fontFamily: typography.medium,
+    fontSize: 14,
   },
   heroStat: {
     borderRadius: radius.lg,
@@ -187,16 +229,14 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
   grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   statCard: {
+    flexBasis: '48%',
     borderRadius: radius.lg,
     borderWidth: 1,
-    padding: spacing.lg,
-    gap: 6,
-  },
-  statCardWide: {
-    borderRadius: radius.lg,
     padding: spacing.lg,
     gap: 6,
   },

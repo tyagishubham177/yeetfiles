@@ -22,15 +22,15 @@ export function useReviewActions() {
     currentFile,
     isDeleting,
     isMoving,
-    keepCurrent: () => {
-      keepCurrentFile();
-      triggerInteractionFeedback('keep', hapticsEnabled);
+    keepCurrent: (source: 'swipe' | 'dock' | 'modal' = 'dock') => {
+      keepCurrentFile(source);
+      void triggerInteractionFeedback(source === 'swipe' ? 'swipe_commit' : 'keep', hapticsEnabled);
     },
-    skipCurrent: () => {
-      skipCurrentFile();
-      triggerInteractionFeedback('skip', hapticsEnabled);
+    skipCurrent: (source: 'swipe' | 'dock' | 'modal' = 'dock') => {
+      skipCurrentFile(source);
+      void triggerInteractionFeedback(source === 'swipe' ? 'swipe_commit' : 'skip', hapticsEnabled);
     },
-    deleteCurrent: async () => {
+    deleteCurrent: async (source: 'swipe' | 'dock' | 'modal' = 'dock') => {
       if (!currentFile || isDeleting || isMoving) {
         return { ok: false as const, message: 'No active photo to delete.', errorCode: 'missing_current_file' };
       }
@@ -41,19 +41,19 @@ export function useReviewActions() {
         const result = await deleteFileItem(currentFile);
 
         if (!result.ok) {
-          recordDeleteFailure(currentFile.id, result.errorCode, result.message);
-          triggerInteractionFeedback('delete_failure', hapticsEnabled);
+          recordDeleteFailure(currentFile.id, result.errorCode, result.message, source);
+          void triggerInteractionFeedback('delete_failure', hapticsEnabled);
           return { ok: false as const, message: result.message, errorCode: result.errorCode };
         }
 
-        commitDeleteSuccess(currentFile.id, currentFile.sizeBytes);
-        triggerInteractionFeedback('delete_success', hapticsEnabled);
+        commitDeleteSuccess(currentFile.id, currentFile.sizeBytes, source);
+        void triggerInteractionFeedback(source === 'swipe' ? 'swipe_commit' : 'delete_success', hapticsEnabled);
         return { ok: true as const };
       } finally {
         setIsDeleting(false);
       }
     },
-    moveCurrent: async (target: MoveTarget) => {
+    moveCurrent: async (target: MoveTarget, source: 'secondary' = 'secondary') => {
       if (!currentFile || isDeleting || isMoving) {
         return { ok: false as const, message: 'No active photo to move.' };
       }
@@ -64,13 +64,13 @@ export function useReviewActions() {
         const result = await moveFileItem(currentFile, target);
 
         if (!result.ok) {
-          recordMoveFailure(currentFile.id, result.errorCode, result.message);
-          triggerInteractionFeedback('move_failure', hapticsEnabled);
+          recordMoveFailure(currentFile.id, result.errorCode, result.message, source);
+          void triggerInteractionFeedback('move_failure', hapticsEnabled);
           return { ok: false as const, message: result.message, errorCode: result.errorCode };
         }
 
-        commitMoveSuccess(currentFile.id, result.target);
-        triggerInteractionFeedback('move_success', hapticsEnabled);
+        commitMoveSuccess(currentFile.id, result.target, source);
+        void triggerInteractionFeedback('move_success', hapticsEnabled);
         return {
           ok: true as const,
           target: result.target,

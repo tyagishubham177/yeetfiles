@@ -12,5 +12,7 @@ dist/
 build/
 
 *.log
+gradle-build.log
 .env
 .env.*
+.eslintcache

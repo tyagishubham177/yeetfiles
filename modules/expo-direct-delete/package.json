@@ -1,0 +1,11 @@
+{
+  "name": "expo-direct-delete",
+  "version": "0.0.1",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "sideEffects": false,
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*"
+  }
+}

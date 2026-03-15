@@ -17,26 +17,53 @@ export function FilterChipRow({ activeFilter, chips, onSelect }: FilterChipRowPr
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
       {chips.map((chip) => {
         const selected = chip.id === activeFilter;
+        const disabled = Boolean(chip.disabled);
 
         return (
           <Pressable
             key={chip.id}
             accessibilityRole="button"
+            disabled={disabled}
             onPress={() => onSelect(chip.id)}
             style={({ pressed }) => [
               styles.chip,
               {
-                backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)',
-                borderColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.08)',
+                backgroundColor: disabled
+                  ? isNightMode
+                    ? 'rgba(255,255,255,0.02)'
+                    : 'rgba(255,255,255,0.04)'
+                  : isNightMode
+                    ? 'rgba(255,255,255,0.05)'
+                    : 'rgba(255,255,255,0.08)',
+                borderColor: disabled
+                  ? 'transparent'
+                  : isNightMode
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(255,255,255,0.08)',
               },
               selected && {
                 backgroundColor: colors.highlight,
                 borderColor: isNightMode ? 'rgba(217,162,59,0.38)' : 'rgba(243,180,63,0.4)',
               },
-              pressed && styles.pressedChip,
+              pressed && !disabled && styles.pressedChip,
             ]}
           >
-            <Text style={[styles.label, { color: selected ? colors.ink : isNightMode ? 'rgba(245,247,250,0.82)' : 'rgba(249,250,251,0.84)' }]}>
+            <Text
+              style={[
+                styles.label,
+                {
+                  color: disabled
+                    ? isNightMode
+                      ? 'rgba(245,247,250,0.34)'
+                      : 'rgba(249,250,251,0.4)'
+                    : selected
+                      ? colors.ink
+                      : isNightMode
+                        ? 'rgba(245,247,250,0.82)'
+                        : 'rgba(249,250,251,0.84)',
+                },
+              ]}
+            >
               {chip.label} ({chip.count})
             </Text>
           </Pressable>

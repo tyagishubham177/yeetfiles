@@ -7,9 +7,8 @@ import {
   createEmptySessionStats,
   getRemainingForTarget,
 } from '../features/rewards/session-stats';
-import { nowIso } from '../lib/time';
-import { asyncStorage } from '../persistence/async-storage';
-import { APP_STORAGE_KEY } from '../persistence/storage-adapter';
+import { isWithinRecentDays, nowIso } from '../lib/time';
+import { APP_STORAGE_KEY, clearStoredAppState, getStoredAppState, setStoredAppState } from '../persistence/storage-adapter';
 import type { ActionLog, AnalyticsEvent, ReviewAction } from '../types/action-log';
 import type {
   LowStorageWarning,
@@ -32,9 +31,12 @@ import type {
   FolderFilterType,
   PermissionState,
   QuickSessionTarget,
+  ReviewActionSource,
   SessionMode,
   SortMode,
 } from '../types/file-item';
+import { getPersistedAppStateSnapshot } from './exportable-state';
+import { appendRecentSessionSummary, pruneHistoryByDay, recordCompletedSession, recordHistoryAction } from './history';
 
 type ScanProgress = {
   loaded: number;
@@ -59,22 +61,22 @@ type AppStore = PersistedAppState & {
   receiveScanChunk: (items: FileItem[], progress: ScanProgress) => void;
   completeScan: () => void;
   failScan: (message: string) => void;
-  keepCurrentFile: () => void;
-  skipCurrentFile: () => void;
-  undoLastAction: () => void;
+  keepCurrentFile: (source?: ReviewActionSource) => void;
+  skipCurrentFile: (source?: ReviewActionSource) => void;
+  undoLastAction: (source?: ReviewActionSource) => void;
   pruneExpiredUndoEntries: () => void;
   dismissMilestone: () => void;
-  commitDeleteSuccess: (fileId: string, bytesDelta: number) => void;
-  recordDeleteFailure: (fileId: string, errorCode: string, message: string) => void;
-  recordPreviewOpen: (fileId: string) => void;
-  requestRescan: (options?: { resetSession?: boolean }) => void;
+  commitDeleteSuccess: (fileId: string, bytesDelta: number, source?: ReviewActionSource) => void;
+  recordDeleteFailure: (fileId: string, errorCode: string, message: string, source?: ReviewActionSource) => void;
+  recordPreviewOpen: (fileId: string, source?: ReviewActionSource) => void;
+  requestRescan: (options?: { resetSession?: boolean; clearReviewState?: boolean; source?: ReviewActionSource }) => void;
   toggleSetting: (key: BooleanSettingKey) => void;
   markGestureTutorialSeen: () => void;
   setStorageWarning: (warning: LowStorageWarning | null) => void;
   recordLowStorageNotificationSent: () => void;
   resetOnboarding: () => void;
-  commitMoveSuccess: (fileId: string, target: MoveTarget) => void;
-  recordMoveFailure: (fileId: string, errorCode: string, message: string) => void;
+  commitMoveSuccess: (fileId: string, target: MoveTarget, source?: ReviewActionSource) => void;
+  recordMoveFailure: (fileId: string, errorCode: string, message: string, source?: ReviewActionSource) => void;
   resetApp: () => Promise<void>;
   dismissSummary: () => void;
 };
@@ -99,13 +101,16 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
   sessionMode: 'quick10',
   targetCount: 10,
   activeFilter: 'all',
-  sortMode: 'oldest_first',
+  sortMode: 'random',
   currentFileId: null,
   queueOrder: [],
   filesById: {},
   actionLogs: [],
   analyticsEvents: [],
+  historyByDay: {},
+  recentSessionSummaries: [],
   lastCompletedScanAt: null,
+  activeScanStartedAt: null,
   scanState: 'idle',
   scanMode: 'initial',
   scanProgressLoaded: 0,
@@ -118,6 +123,7 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
   lowStorageWarning: null,
   lastStorageCheckAt: null,
   lastLowStorageNotificationAt: null,
+  lastCleanRebuildAt: null,
   sessionId: null,
   sessionStats: createEmptySessionStats(),
   sessionSummary: null,
@@ -130,7 +136,9 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
 const UNDO_WINDOW_MS = 5000;
 const UNDO_BUFFER_LIMIT = 10;
 const MILESTONE_COUNTS = [5, 25, 50, 100];
-const BASE_FILTER_ORDER: FilterType[] = ['all', 'screenshots', 'camera', 'downloads'];
+const ACTION_LOG_LIMIT = 250;
+const ANALYTICS_EVENT_LIMIT = 80;
+const BASE_FILTER_ORDER: FilterType[] = ['all', 'camera', 'screenshots', 'downloads'];
 let cachedFilterChipQueueOrder: string[] | null = null;
 let cachedFilterChipFilesById: Record<string, FileItem> | null = null;
 let cachedFilterChips: FilterChip[] = [];
@@ -145,6 +153,23 @@ let cachedPendingQueueCount = 0;
 let cachedNewQueueOrder: string[] | null = null;
 let cachedNewFilesById: Record<string, FileItem> | null = null;
 let cachedNewSinceLastScanCount = 0;
+
+function resetSelectorCaches() {
+  cachedFilterChipQueueOrder = null;
+  cachedFilterChipFilesById = null;
+  cachedFilterChips = [];
+  cachedVisibleQueueOrder = null;
+  cachedVisibleFilesById = null;
+  cachedVisibleFilter = null;
+  cachedVisibleSortMode = null;
+  cachedVisibleQueueIds = [];
+  cachedPendingQueueOrder = null;
+  cachedPendingFilesById = null;
+  cachedPendingQueueCount = 0;
+  cachedNewQueueOrder = null;
+  cachedNewFilesById = null;
+  cachedNewSinceLastScanCount = 0;
+}
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -238,6 +263,10 @@ function parseDateValue(value: string | null): number {
 
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function normalizeSortMode(value: SortMode): SortMode {
+  return value === 'smart' ? 'random' : value;
 }
 
 function getSmartSortScore(file: FileItem): number {
@@ -373,6 +402,7 @@ function appendActionLog(
   fileId: string,
   sessionId: string | null,
   result: ActionLog['result'],
+  source: ReviewActionSource,
   bytesDelta: number = 0,
   errorCode?: string,
   errorMessage?: string
@@ -386,11 +416,14 @@ function appendActionLog(
       timestamp: nowIso(),
       sessionId,
       bytesDelta,
+      source,
       errorCode,
       errorMessage,
     },
     ...logs,
-  ].slice(0, 200);
+  ]
+    .filter((entry) => isWithinRecentDays(entry.timestamp, 90))
+    .slice(0, ACTION_LOG_LIMIT);
 }
 
 function appendAnalyticsEvent(events: AnalyticsEvent[], name: AnalyticsEvent['name'], sessionId: string): AnalyticsEvent[] {
@@ -402,7 +435,9 @@ function appendAnalyticsEvent(events: AnalyticsEvent[], name: AnalyticsEvent['na
       timestamp: nowIso(),
     },
     ...events,
-  ].slice(0, 80);
+  ]
+    .filter((entry) => isWithinRecentDays(entry.timestamp, 90))
+    .slice(0, ANALYTICS_EVENT_LIMIT);
 }
 
 function appendActionLogIfEnabled(
@@ -410,6 +445,7 @@ function appendActionLogIfEnabled(
   action: ReviewAction,
   fileId: string,
   result: ActionLog['result'],
+  source: ReviewActionSource,
   bytesDelta: number = 0,
   errorCode?: string,
   errorMessage?: string
@@ -418,7 +454,7 @@ function appendActionLogIfEnabled(
     return state.actionLogs;
   }
 
-  return appendActionLog(state.actionLogs, action, fileId, state.sessionId, result, bytesDelta, errorCode, errorMessage);
+  return appendActionLog(state.actionLogs, action, fileId, state.sessionId, result, source, bytesDelta, errorCode, errorMessage);
 }
 
 function appendAnalyticsEventIfEnabled(
@@ -442,6 +478,37 @@ function maybeCaptureSummary(state: PersistedAppState, stats: SessionStats) {
   return getRemainingForTarget(stats, state.targetCount) === 0
     ? buildSessionSummary(state.sessionId, stats, state.targetCount as QuickSessionTarget | null)
     : null;
+}
+
+function buildReviewProgressArtifacts(
+  state: PersistedAppState,
+  action: ReviewAction,
+  fileId: string,
+  sessionStats: SessionStats,
+  source: ReviewActionSource,
+  bytesDelta: number = 0
+) {
+  const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
+  const analyticsEvents = state.sessionId
+    ? [
+        ...(state.sessionStats.reviewedCount === 0
+          ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+          : []),
+        ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
+        ...state.analyticsEvents,
+      ].slice(0, ANALYTICS_EVENT_LIMIT)
+    : state.analyticsEvents;
+  const sessionSummary = maybeCaptureSummary(state, sessionStats);
+  const historyAfterAction = recordHistoryAction(state.historyByDay, action, nowIso(), bytesDelta);
+
+  return {
+    milestone,
+    analyticsEvents,
+    sessionSummary,
+    historyByDay: sessionSummary ? recordCompletedSession(historyAfterAction, sessionSummary) : historyAfterAction,
+    recentSessionSummaries: sessionSummary ? appendRecentSessionSummary(state.recentSessionSummaries, sessionSummary) : state.recentSessionSummaries,
+    actionLogs: appendActionLogIfEnabled(state, action, fileId, 'success', source, bytesDelta),
+  };
 }
 
 function buildMilestoneEvent(reviewedCount: number): MilestoneEvent | null {
@@ -578,8 +645,8 @@ export const useAppStore = create<AppStore>()(
         })),
       setSortMode: (value) =>
         set((state) => ({
-          sortMode: value,
-          currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, value),
+          sortMode: normalizeSortMode(value),
+          currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, normalizeSortMode(value)),
         })),
       setNightModePreference: (value) =>
         set((state) => ({
@@ -590,6 +657,7 @@ export const useAppStore = create<AppStore>()(
         })),
       beginScan: () =>
         set((state) => {
+          const scanStartedAt = nowIso();
           const nextFiles =
             state.scanMode === 'rescan'
               ? Object.fromEntries(
@@ -605,6 +673,7 @@ export const useAppStore = create<AppStore>()(
 
           return {
             filesById: nextFiles,
+            activeScanStartedAt: scanStartedAt,
             scanState: 'scanning' as const,
             scanError: null,
             scanProgressLoaded: 0,
@@ -682,6 +751,7 @@ export const useAppStore = create<AppStore>()(
           const completedAt = nowIso();
 
           return {
+            activeScanStartedAt: null,
             scanState: 'ready' as const,
             lastCompletedScanAt: completedAt,
             lastRescanSummary: buildRescanSummary(state, completedAt) ?? state.lastRescanSummary,
@@ -690,10 +760,11 @@ export const useAppStore = create<AppStore>()(
         }),
       failScan: (message) =>
         set({
+          activeScanStartedAt: null,
           scanState: 'error',
           scanError: message,
         }),
-      keepCurrentFile: () =>
+      keepCurrentFile: (source = 'dock') =>
         set((state) => {
           if (!state.currentFileId) {
             return {};
@@ -715,29 +786,22 @@ export const useAppStore = create<AppStore>()(
             [active.id]: updatedFile,
           };
           const sessionStats = applySuccessfulAction(state.sessionStats, 'keep');
-          const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
-          const analyticsEvents = state.sessionId
-            ? [
-                ...(state.sessionStats.reviewedCount === 0
-                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
-                  : []),
-                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
-                ...state.analyticsEvents,
-              ].slice(0, 80)
-            : state.analyticsEvents;
+          const artifacts = buildReviewProgressArtifacts(state, 'keep', active.id, sessionStats, source);
 
           return {
             filesById: nextFiles,
             currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
-            sessionSummary: maybeCaptureSummary(state, sessionStats),
-            activeMilestone: milestone ?? state.activeMilestone,
-            analyticsEvents,
+            sessionSummary: artifacts.sessionSummary,
+            activeMilestone: artifacts.milestone ?? state.activeMilestone,
+            analyticsEvents: artifacts.analyticsEvents,
+            historyByDay: artifacts.historyByDay,
+            recentSessionSummaries: artifacts.recentSessionSummaries,
             undoEntries: appendUndoEntry(state.undoEntries, createUndoEntry('keep', active, state)),
-            actionLogs: appendActionLogIfEnabled(state, 'keep', active.id, 'success'),
+            actionLogs: artifacts.actionLogs,
           };
         }),
-      skipCurrentFile: () =>
+      skipCurrentFile: (source = 'dock') =>
         set((state) => {
           if (!state.currentFileId) {
             return {};
@@ -760,30 +824,23 @@ export const useAppStore = create<AppStore>()(
           };
           const nextQueueOrder = [...state.queueOrder.filter((fileId) => fileId !== active.id), active.id];
           const sessionStats = applySuccessfulAction(state.sessionStats, 'skip');
-          const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
-          const analyticsEvents = state.sessionId
-            ? [
-                ...(state.sessionStats.reviewedCount === 0
-                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
-                  : []),
-                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
-                ...state.analyticsEvents,
-              ].slice(0, 80)
-            : state.analyticsEvents;
+          const artifacts = buildReviewProgressArtifacts(state, 'skip', active.id, sessionStats, source);
 
           return {
             filesById: nextFiles,
             queueOrder: nextQueueOrder,
             currentFileId: resolveCurrentFileId(nextQueueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
-            sessionSummary: maybeCaptureSummary(state, sessionStats),
-            activeMilestone: milestone ?? state.activeMilestone,
-            analyticsEvents,
+            sessionSummary: artifacts.sessionSummary,
+            activeMilestone: artifacts.milestone ?? state.activeMilestone,
+            analyticsEvents: artifacts.analyticsEvents,
+            historyByDay: artifacts.historyByDay,
+            recentSessionSummaries: artifacts.recentSessionSummaries,
             undoEntries: appendUndoEntry(state.undoEntries, createUndoEntry('skip', active, state)),
-            actionLogs: appendActionLogIfEnabled(state, 'skip', active.id, 'success'),
+            actionLogs: artifacts.actionLogs,
           };
         }),
-      undoLastAction: () =>
+      undoLastAction: (source = 'undo') =>
         set((state) => {
           const undoEntry = pruneExpiredUndoEntries(state.undoEntries)[0];
           if (!undoEntry) {
@@ -820,7 +877,7 @@ export const useAppStore = create<AppStore>()(
             sessionSummary: undoEntry.previousSessionSummary,
             activeMilestone: undoEntry.previousActiveMilestone,
             undoEntries: state.undoEntries.filter((entry) => entry.id !== undoEntry.id && isUndoEntryActive(entry)),
-            actionLogs: appendActionLogIfEnabled(state, 'undo', undoEntry.fileId, 'success'),
+            actionLogs: appendActionLogIfEnabled(state, 'undo', undoEntry.fileId, 'success', source),
           };
         }),
       pruneExpiredUndoEntries: () =>
@@ -831,7 +888,7 @@ export const useAppStore = create<AppStore>()(
         set({
           activeMilestone: null,
         }),
-      commitDeleteSuccess: (fileId, bytesDelta) =>
+      commitDeleteSuccess: (fileId, bytesDelta, source = 'system') =>
         set((state) => {
           const active = state.filesById[fileId];
           if (!active) {
@@ -850,28 +907,21 @@ export const useAppStore = create<AppStore>()(
             [fileId]: updatedFile,
           };
           const sessionStats = applySuccessfulAction(state.sessionStats, 'delete', bytesDelta);
-          const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
-          const analyticsEvents = state.sessionId
-            ? [
-                ...(state.sessionStats.reviewedCount === 0
-                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
-                  : []),
-                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
-                ...state.analyticsEvents,
-              ].slice(0, 80)
-            : state.analyticsEvents;
+          const artifacts = buildReviewProgressArtifacts(state, 'delete', fileId, sessionStats, source, bytesDelta);
 
           return {
             filesById: nextFiles,
             currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
-            sessionSummary: maybeCaptureSummary(state, sessionStats),
-            activeMilestone: milestone ?? state.activeMilestone,
-            analyticsEvents,
-            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'success', bytesDelta),
+            sessionSummary: artifacts.sessionSummary,
+            activeMilestone: artifacts.milestone ?? state.activeMilestone,
+            analyticsEvents: artifacts.analyticsEvents,
+            historyByDay: artifacts.historyByDay,
+            recentSessionSummaries: artifacts.recentSessionSummaries,
+            actionLogs: artifacts.actionLogs,
           };
         }),
-      commitMoveSuccess: (fileId, target) =>
+      commitMoveSuccess: (fileId, target, source = 'secondary') =>
         set((state) => {
           const active = state.filesById[fileId];
           if (!active) {
@@ -892,29 +942,22 @@ export const useAppStore = create<AppStore>()(
             [fileId]: updatedFile,
           };
           const sessionStats = applySuccessfulAction(state.sessionStats, 'move');
-          const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
-          const analyticsEvents = state.sessionId
-            ? [
-                ...(state.sessionStats.reviewedCount === 0
-                  ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
-                  : []),
-                ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
-                ...state.analyticsEvents,
-              ].slice(0, 80)
-            : state.analyticsEvents;
+          const artifacts = buildReviewProgressArtifacts(state, 'move', fileId, sessionStats, source);
 
           return {
             filesById: nextFiles,
             currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
-            sessionSummary: maybeCaptureSummary(state, sessionStats),
-            activeMilestone: milestone ?? state.activeMilestone,
-            analyticsEvents,
+            sessionSummary: artifacts.sessionSummary,
+            activeMilestone: artifacts.milestone ?? state.activeMilestone,
+            analyticsEvents: artifacts.analyticsEvents,
+            historyByDay: artifacts.historyByDay,
+            recentSessionSummaries: artifacts.recentSessionSummaries,
             recentMoveTargets: appendRecentMoveTarget(state.recentMoveTargets, target),
-            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'success'),
+            actionLogs: artifacts.actionLogs,
           };
         }),
-      recordMoveFailure: (fileId, errorCode, message) =>
+      recordMoveFailure: (fileId, errorCode, message, source = 'secondary') =>
         set((state) => {
           const active = state.filesById[fileId];
           if (!active) {
@@ -931,10 +974,10 @@ export const useAppStore = create<AppStore>()(
               ...state.filesById,
               [fileId]: updatedFile,
             },
-            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'failed', 0, errorCode, message),
+            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'failed', source, 0, errorCode, message),
           };
         }),
-      recordDeleteFailure: (fileId, errorCode, message) =>
+      recordDeleteFailure: (fileId, errorCode, message, source = 'system') =>
         set((state) => {
           const active = state.filesById[fileId];
           if (!active) {
@@ -951,32 +994,50 @@ export const useAppStore = create<AppStore>()(
               ...state.filesById,
               [fileId]: updatedFile,
             },
-            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'failed', 0, errorCode, message),
+            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'failed', source, 0, errorCode, message),
           };
         }),
-      recordPreviewOpen: (fileId) =>
+      recordPreviewOpen: (fileId, source = 'modal') =>
         set((state) => ({
-          actionLogs: appendActionLogIfEnabled(state, 'open', fileId, 'success'),
+          actionLogs: appendActionLogIfEnabled(state, 'open', fileId, 'success', source),
         })),
-      requestRescan: ({ resetSession = false } = {}) =>
-        set((state) => ({
-          currentFileId: state.currentFileId ?? resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
-          scanState: 'idle',
-          scanMode: 'rescan' as const,
-          scanError: null,
-          scanProgressLoaded: 0,
-          scanProgressTotal: null,
-          currentScanNewFileCount: 0,
-          currentScanMatchedFileCount: 0,
-          currentScanProtectedReviewedCount: 0,
-          sessionSummary: resetSession ? null : state.sessionSummary,
-          sessionStats: resetSession ? createEmptySessionStats() : state.sessionStats,
-          sessionId: resetSession ? createId('session') : state.sessionId,
-          undoEntries: resetSession ? [] : pruneExpiredUndoEntries(state.undoEntries),
-          activeMilestone: resetSession ? null : state.activeMilestone,
-          activeFilter: resetSession ? 'all' : state.activeFilter,
-          scanNonce: state.scanNonce + 1,
-        })),
+      requestRescan: ({ resetSession = false, clearReviewState = false, source = 'settings' } = {}) =>
+        set((state) => {
+          const nextFilesById = clearReviewState ? {} : state.filesById;
+          const nextQueueOrder = clearReviewState ? [] : state.queueOrder;
+
+          return {
+            currentFileId: clearReviewState
+              ? null
+              : state.currentFileId ?? resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
+            filesById: nextFilesById,
+            queueOrder: nextQueueOrder,
+            scanState: 'idle',
+            scanMode: 'rescan' as const,
+            scanError: null,
+            scanProgressLoaded: 0,
+            scanProgressTotal: null,
+            currentScanNewFileCount: 0,
+            currentScanMatchedFileCount: 0,
+            currentScanProtectedReviewedCount: 0,
+            activeScanStartedAt: null,
+            sessionSummary: resetSession || clearReviewState ? null : state.sessionSummary,
+            sessionStats: resetSession ? createEmptySessionStats() : state.sessionStats,
+            sessionId: resetSession ? createId('session') : state.sessionId,
+            undoEntries: resetSession || clearReviewState ? [] : pruneExpiredUndoEntries(state.undoEntries),
+            activeMilestone: resetSession ? null : state.activeMilestone,
+            activeFilter: resetSession || clearReviewState ? 'all' : state.activeFilter,
+            lastCleanRebuildAt: clearReviewState ? nowIso() : state.lastCleanRebuildAt,
+            scanNonce: state.scanNonce + 1,
+            actionLogs: appendActionLogIfEnabled(
+              state,
+              'rescan',
+              clearReviewState ? 'clean-rebuild' : 'incremental-rescan',
+              'success',
+              source
+            ),
+          };
+        }),
       toggleSetting: (key) =>
         set((state) => {
           const nextValue = !state.settings[key];
@@ -1015,7 +1076,8 @@ export const useAppStore = create<AppStore>()(
           },
         })),
       resetApp: async () => {
-        await asyncStorage.removeItem(APP_STORAGE_KEY);
+        await clearStoredAppState();
+        resetSelectorCaches();
         set({
           ...INITIAL_PERSISTED_STATE,
           hasHydrated: true,
@@ -1029,24 +1091,61 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: APP_STORAGE_KEY,
-      storage: createJSONStorage(() => asyncStorage),
+      storage: createJSONStorage(() => ({
+        getItem: async () => getStoredAppState(),
+        setItem: async (_name, value) => setStoredAppState(value),
+        removeItem: async () => clearStoredAppState(),
+      })),
       merge: (persistedState, currentState) => {
         const typedPersisted = persistedState as Partial<PersistedAppState> | undefined;
+        const settings = {
+          ...INITIAL_SETTINGS,
+          ...(typedPersisted?.settings ?? {}),
+        };
+        const analyticsEvents = settings.debugLoggingEnabled
+          ? (typedPersisted?.analyticsEvents ?? currentState.analyticsEvents).filter((entry) => isWithinRecentDays(entry.timestamp, 90)).slice(0, ANALYTICS_EVENT_LIMIT)
+          : [];
+        const actionLogs = settings.debugLoggingEnabled
+          ? (typedPersisted?.actionLogs ?? currentState.actionLogs).filter((entry) => isWithinRecentDays(entry.timestamp, 90)).slice(0, ACTION_LOG_LIMIT)
+          : [];
+        const filesById = typedPersisted?.filesById ?? currentState.filesById;
+        const queueOrder = (typedPersisted?.queueOrder ?? currentState.queueOrder).filter((fileId) => Boolean(filesById[fileId]));
+        const sortMode = normalizeSortMode(typedPersisted?.sortMode ?? currentState.sortMode);
+        const activeFilter = typedPersisted?.activeFilter ?? currentState.activeFilter;
+        const recentSessionSummaries = (typedPersisted?.recentSessionSummaries ?? currentState.recentSessionSummaries)
+          .filter((entry) => isWithinRecentDays(entry.completedAt, 90))
+          .slice(0, 12);
+        const currentFileId =
+          typedPersisted?.currentFileId && filesById[typedPersisted.currentFileId]
+            ? typedPersisted.currentFileId
+            : resolveCurrentFileId(queueOrder, filesById, activeFilter, sortMode);
 
         return {
           ...currentState,
+          ...typedPersisted,
+          filesById,
+          queueOrder,
+          currentFileId,
+          sortMode,
+          activeFilter,
+          actionLogs,
+          analyticsEvents,
+          historyByDay: pruneHistoryByDay(typedPersisted?.historyByDay ?? currentState.historyByDay),
+          recentSessionSummaries,
+          scanState: typedPersisted?.scanState === 'error' ? 'error' : 'idle',
+          scanProgressLoaded: 0,
+          scanProgressTotal: null,
+          currentScanNewFileCount: 0,
+          currentScanMatchedFileCount: 0,
+          currentScanProtectedReviewedCount: 0,
+          activeScanStartedAt: null,
           lastLowStorageNotificationAt: typedPersisted?.lastLowStorageNotificationAt ?? currentState.lastLowStorageNotificationAt,
-          settings: {
-            ...INITIAL_SETTINGS,
-            ...(typedPersisted?.settings ?? {}),
-          },
+          settings,
         };
       },
-      partialize: (state) => ({
-        lastLowStorageNotificationAt: state.lastLowStorageNotificationAt,
-        settings: state.settings,
-      }),
+      partialize: (state) => getPersistedAppStateSnapshot(state),
       onRehydrateStorage: () => (state) => {
+        resetSelectorCaches();
         state?.setHasHydrated(true);
       },
     }
@@ -1199,24 +1298,25 @@ export function selectFilterChips(state: AppStore): FilterChip[] {
       id: filterId,
       label: getFilterLabel(filterId),
       count,
+      disabled: count === 0,
     };
   });
 
   const folderChips: FilterChip[] = [...folderCounts.entries()]
-    .sort((left, right) => left[1].label.localeCompare(right[1].label))
+    .sort((left, right) => right[1].count - left[1].count || left[1].label.localeCompare(right[1].label))
     .map(([id, value]) => ({
       id,
       label: value.label,
       count: value.count,
+      disabled: value.count === 0,
     }));
 
-  if (baseCounts.other > 0) {
-    folderChips.push({
-      id: 'other',
-      label: getFilterLabel('other'),
-      count: baseCounts.other,
-    });
-  }
+  folderChips.push({
+    id: 'other',
+    label: getFilterLabel('other'),
+    count: baseCounts.other,
+    disabled: baseCounts.other === 0,
+  });
 
   cachedFilterChipQueueOrder = state.queueOrder;
   cachedFilterChipFilesById = state.filesById;
@@ -1242,7 +1342,7 @@ export function getActiveFilterLabel(state: Pick<AppStore, 'activeFilter' | 'fil
 
 export function getSortLabel(sortMode: SortMode): string {
   if (sortMode === 'smart') {
-    return 'Smart';
+    return 'Random';
   }
 
   if (sortMode === 'newest_first') {

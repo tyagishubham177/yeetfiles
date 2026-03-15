@@ -10,6 +10,7 @@ type DebugExportPayload = {
     keptFiles: number;
     deletedFiles: number;
     skippedFiles: number;
+    movedFiles: number;
   };
   state: PersistedAppState;
 };
@@ -25,6 +26,7 @@ function buildDebugExportPayload(state: PersistedAppState): DebugExportPayload {
       keptFiles: files.filter((file) => file.status === 'kept').length,
       deletedFiles: files.filter((file) => file.status === 'deleted').length,
       skippedFiles: files.filter((file) => file.status === 'skipped').length,
+      movedFiles: files.filter((file) => file.status === 'moved').length,
     },
     state,
   };

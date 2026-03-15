@@ -48,10 +48,31 @@ function buildScanFingerprint(asset: MediaLibrary.Asset, sizeBytes: number): str
   return [asset.uri, modifiedAt, sizeBytes, asset.filename].join('::');
 }
 
-function normalizeAsset(asset: MediaLibrary.Asset, albumTitle: string | null): FileItem {
+async function resolveSizeBytes(asset: MediaLibrary.Asset): Promise<number> {
+  const primarySize = getSizeBytes(asset.uri);
+  if (primarySize > 0) {
+    return primarySize;
+  }
+
+  const assetInfo = await MediaLibrary.getAssetInfoAsync(asset.id, {
+    shouldDownloadFromNetwork: false,
+  }).catch(() => null);
+  const fallbackUris = [assetInfo?.localUri, asset.uri].filter((uri): uri is string => Boolean(uri));
+
+  for (const uri of fallbackUris) {
+    const size = getSizeBytes(uri);
+    if (size > 0) {
+      return size;
+    }
+  }
+
+  return 0;
+}
+
+async function normalizeAsset(asset: MediaLibrary.Asset, albumTitle: string | null): Promise<FileItem> {
   const createdAt = asset.creationTime ? new Date(asset.creationTime).toISOString() : null;
   const modifiedAt = asset.modificationTime ? new Date(asset.modificationTime).toISOString() : createdAt;
-  const sizeBytes = getSizeBytes(asset.uri);
+  const sizeBytes = await resolveSizeBytes(asset);
 
   return {
     id: `file-${asset.id}`,
@@ -67,6 +88,8 @@ function normalizeAsset(asset: MediaLibrary.Asset, albumTitle: string | null): F
     height: asset.height,
     createdAt,
     modifiedAt,
+    category: 'photo',
+    lane: 'photos',
     bucketType: classifyFileBucket({ filename: asset.filename, uri: asset.uri, albumTitle }),
     sortKey: `${asset.creationTime ?? 0}-${asset.id}`,
     scanFingerprint: buildScanFingerprint(asset, sizeBytes),
@@ -93,7 +116,9 @@ export async function scanPhotoLibrary({ pageSize = MEDIA_SCAN_PAGE_SIZE, onChun
       sortBy: [[MediaLibrary.SortBy.creationTime, true]],
     });
 
-    const items = page.assets.map((asset) => normalizeAsset(asset, asset.albumId ? albumTitleById.get(asset.albumId) ?? null : null));
+    const items = await Promise.all(
+      page.assets.map((asset) => normalizeAsset(asset, asset.albumId ? albumTitleById.get(asset.albumId) ?? null : null))
+    );
     loaded += items.length;
     hasNextPage = page.hasNextPage;
     cursor = page.endCursor ?? undefined;

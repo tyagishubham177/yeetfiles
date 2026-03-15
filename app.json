@@ -1,13 +1,18 @@
 {
   "expo": {
     "name": "YeetFiles",
-    "slug": "fileswipe",
+    "slug": "yeetfiles",
     "scheme": "yeetfiles",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
     "android": {
       "package": "com.yeetfiles.app",
       "edgeToEdgeEnabled": true,
