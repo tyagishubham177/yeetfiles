@@ -45,7 +45,11 @@
       "typedRoutes": false
     },
     "extra": {
-      "router": {}
-    }
+      "router": {},
+      "eas": {
+        "projectId": "1be54b2a-d36a-432b-b5bb-25cd834d9e58"
+      }
+    },
+    "owner": "tyagi.shubham"
   }
 }
