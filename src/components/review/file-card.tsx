@@ -51,6 +51,18 @@ function OverlayChip({ label }: { label: string }) {
   );
 }
 
+function getPeekCardStyle(index: number) {
+  if (index === 0) {
+    return styles.peekBackMost;
+  }
+
+  if (index === 1) {
+    return styles.peekBack;
+  }
+
+  return styles.peekFront;
+}
+
 function FileCardComponent({
   current,
   nextItems,
@@ -208,8 +220,8 @@ function FileCardComponent({
 
   return (
     <View style={styles.stackWrap}>
-      {nextItems.slice(0, 2).reverse().map((item, index) => (
-        <View key={item.id} style={[styles.peekCard, { backgroundColor: colors.stageCard }, index === 0 ? styles.peekBack : styles.peekFront]}>
+      {nextItems.slice(0, 3).reverse().map((item, index) => (
+        <View key={item.id} style={[styles.peekCard, { backgroundColor: colors.stageCard }, getPeekCardStyle(index)]}>
           <Image source={{ uri: item.previewUri }} style={styles.peekImage} resizeMode="cover" />
         </View>
       ))}
@@ -338,6 +350,10 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: radius.lg,
     overflow: 'hidden',
+  },
+  peekBackMost: {
+    transform: [{ scale: 0.88 }, { translateY: 36 }],
+    opacity: 0.18,
   },
   peekBack: {
     transform: [{ scale: 0.92 }, { translateY: 26 }],

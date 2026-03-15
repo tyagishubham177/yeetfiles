@@ -12,6 +12,7 @@ export function getPersistedAppStateSnapshot(state: PersistedStateSource): Persi
     sortMode: state.sortMode,
     currentFileId: state.currentFileId,
     queueOrder: state.queueOrder,
+    randomQueueOrder: state.randomQueueOrder,
     filesById: state.filesById,
     actionLogs: state.actionLogs,
     analyticsEvents: state.analyticsEvents,

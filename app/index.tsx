@@ -100,18 +100,14 @@ export default function WelcomeScreen() {
                   style={({ pressed }) => [
                     styles.sessionChip,
                     {
-                      backgroundColor: selected ? colors.action : colors.surfaceMuted,
+                      backgroundColor: colors.surfaceMuted,
                       borderColor: selected ? colors.highlight : isDark ? colors.outline : 'transparent',
                     },
-                    selected && styles.sessionChipSelected,
                     pressed && styles.pressedCard,
                   ]}
                 >
-                  <View style={styles.sessionChipHeader}>
-                    <Text style={[styles.sessionChipLabel, { color: selected ? colors.onAction : colors.ink }]}>{getQuickSessionLabel(option)}</Text>
-                    {selected ? <Text style={styles.sessionChipCheck}>Selected</Text> : null}
-                  </View>
-                  <Text style={[styles.sessionChipSubtle, { color: selected ? 'rgba(249,250,251,0.72)' : colors.mutedInk }]}>
+                  <Text style={[styles.sessionChipLabel, { color: colors.ink }]}>{getQuickSessionLabel(option)}</Text>
+                  <Text style={[styles.sessionChipSubtle, { color: colors.mutedInk }]}>
                     {option === 10 ? '2 min' : option === 25 ? '5 min' : '10 min'}
                   </Text>
                 </Pressable>
@@ -247,15 +243,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 4,
   },
-  sessionChipSelected: {
-    transform: [{ scale: 1.02 }],
-  },
-  sessionChipHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
   pressedCard: {
     opacity: 0.92,
     transform: [{ scale: 0.99 }],
@@ -263,13 +250,6 @@ const styles = StyleSheet.create({
   sessionChipLabel: {
     fontFamily: typography.bold,
     fontSize: 16,
-  },
-  sessionChipCheck: {
-    color: '#FFFFFF',
-    fontFamily: typography.bold,
-    fontSize: 11,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
   },
   sessionChipSubtle: {
     fontFamily: typography.medium,

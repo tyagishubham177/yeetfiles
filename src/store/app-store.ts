@@ -104,6 +104,7 @@ const INITIAL_PERSISTED_STATE: PersistedAppState = {
   sortMode: 'random',
   currentFileId: null,
   queueOrder: [],
+  randomQueueOrder: [],
   filesById: {},
   actionLogs: [],
   analyticsEvents: [],
@@ -139,13 +140,16 @@ const MILESTONE_COUNTS = [5, 25, 50, 100];
 const ACTION_LOG_LIMIT = 250;
 const ANALYTICS_EVENT_LIMIT = 80;
 const BASE_FILTER_ORDER: FilterType[] = ['all', 'camera', 'screenshots', 'downloads'];
+const STACK_PREVIEW_COUNT = 3;
 let cachedFilterChipQueueOrder: string[] | null = null;
 let cachedFilterChipFilesById: Record<string, FileItem> | null = null;
 let cachedFilterChips: FilterChip[] = [];
 let cachedVisibleQueueOrder: string[] | null = null;
+let cachedVisibleRandomQueueOrder: string[] | null = null;
 let cachedVisibleFilesById: Record<string, FileItem> | null = null;
 let cachedVisibleFilter: FilterType | null = null;
 let cachedVisibleSortMode: SortMode | null = null;
+let cachedVisibleCurrentFileId: string | null = null;
 let cachedVisibleQueueIds: string[] = [];
 let cachedPendingQueueOrder: string[] | null = null;
 let cachedPendingFilesById: Record<string, FileItem> | null = null;
@@ -159,9 +163,11 @@ function resetSelectorCaches() {
   cachedFilterChipFilesById = null;
   cachedFilterChips = [];
   cachedVisibleQueueOrder = null;
+  cachedVisibleRandomQueueOrder = null;
   cachedVisibleFilesById = null;
   cachedVisibleFilter = null;
   cachedVisibleSortMode = null;
+  cachedVisibleCurrentFileId = null;
   cachedVisibleQueueIds = [];
   cachedPendingQueueOrder = null;
   cachedPendingFilesById = null;
@@ -356,8 +362,8 @@ function compareFiles(left: FileItem, right: FileItem, sortMode: SortMode, queue
   return (queueIndex.get(left.id) ?? 0) - (queueIndex.get(right.id) ?? 0);
 }
 
-function shuffleFiles(files: FileItem[]): FileItem[] {
-  const shuffled = [...files];
+function shuffleIds(ids: string[]): string[] {
+  const shuffled = [...ids];
 
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
     const randomIndex = Math.floor(Math.random() * (index + 1));
@@ -369,31 +375,85 @@ function shuffleFiles(files: FileItem[]): FileItem[] {
   return shuffled;
 }
 
-function getVisibleQueueIds(state: Pick<PersistedAppState, 'queueOrder' | 'filesById' | 'activeFilter' | 'sortMode'>): string[] {
+function reconcileRandomQueueOrder(queueOrder: string[], filesById: Record<string, FileItem>, randomQueueOrder: string[]): string[] {
+  const existingQueueIds = queueOrder.filter((fileId) => Boolean(filesById[fileId]));
+  if (existingQueueIds.length === 0) {
+    return [];
+  }
+
+  const baseOrder = randomQueueOrder.length > 0 ? randomQueueOrder : shuffleIds(existingQueueIds);
+  const seen = new Set<string>();
+  const reconciled = baseOrder.filter((fileId) => {
+    if (!filesById[fileId] || seen.has(fileId)) {
+      return false;
+    }
+
+    seen.add(fileId);
+    return true;
+  });
+  const missingIds = existingQueueIds.filter((fileId) => !seen.has(fileId));
+
+  return missingIds.length > 0 ? [...reconciled, ...shuffleIds(missingIds)] : reconciled;
+}
+
+function moveFileIdToRandomTail(randomQueueOrder: string[], fileId: string): string[] {
+  if (!randomQueueOrder.includes(fileId)) {
+    return randomQueueOrder;
+  }
+
+  return [...randomQueueOrder.filter((queueFileId) => queueFileId !== fileId), fileId];
+}
+
+function getVisibleQueueIds(
+  state: Pick<PersistedAppState, 'queueOrder' | 'randomQueueOrder' | 'filesById' | 'activeFilter' | 'sortMode' | 'currentFileId'>
+): string[] {
   if (
     cachedVisibleQueueOrder === state.queueOrder &&
+    cachedVisibleRandomQueueOrder === state.randomQueueOrder &&
     cachedVisibleFilesById === state.filesById &&
     cachedVisibleFilter === state.activeFilter &&
-    cachedVisibleSortMode === state.sortMode
+    cachedVisibleSortMode === state.sortMode &&
+    cachedVisibleCurrentFileId === state.currentFileId
   ) {
     return cachedVisibleQueueIds;
   }
 
   const queueIndex = new Map(state.queueOrder.map((fileId, index) => [fileId, index]));
-
   const actionableFiles = state.queueOrder
     .map((fileId) => state.filesById[fileId])
     .filter((file): file is FileItem => Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter));
 
-  const visibleQueueIds =
-    state.sortMode === 'random'
-      ? shuffleFiles(actionableFiles).map((file) => file.id)
-      : actionableFiles.sort((left, right) => compareFiles(left, right, state.sortMode, queueIndex)).map((file) => file.id);
+  let visibleQueueIds: string[];
+
+  if (state.sortMode === 'random') {
+    const stableRandomOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
+    const matchingIds = stableRandomOrder.filter((fileId) => {
+      const file = state.filesById[fileId];
+      return Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter);
+    });
+    const anchoredCurrentFile = state.currentFileId ? state.filesById[state.currentFileId] : null;
+
+    if (
+      state.currentFileId &&
+      matchingIds.includes(state.currentFileId) &&
+      anchoredCurrentFile &&
+      isActionableStatus(anchoredCurrentFile.status) &&
+      matchesFilter(anchoredCurrentFile, state.activeFilter)
+    ) {
+      visibleQueueIds = [state.currentFileId, ...matchingIds.filter((fileId) => fileId !== state.currentFileId)];
+    } else {
+      visibleQueueIds = matchingIds;
+    }
+  } else {
+    visibleQueueIds = actionableFiles.sort((left, right) => compareFiles(left, right, state.sortMode, queueIndex)).map((file) => file.id);
+  }
 
   cachedVisibleQueueOrder = state.queueOrder;
+  cachedVisibleRandomQueueOrder = state.randomQueueOrder;
   cachedVisibleFilesById = state.filesById;
   cachedVisibleFilter = state.activeFilter;
   cachedVisibleSortMode = state.sortMode;
+  cachedVisibleCurrentFileId = state.currentFileId;
   cachedVisibleQueueIds = visibleQueueIds;
 
   return visibleQueueIds;
@@ -401,16 +461,18 @@ function getVisibleQueueIds(state: Pick<PersistedAppState, 'queueOrder' | 'files
 
 function resolveCurrentFileId(
   queueOrder: string[],
+  randomQueueOrder: string[],
   filesById: Record<string, FileItem>,
   activeFilter: FilterType,
   sortMode: SortMode
 ): string | null {
-  const visibleIds = getVisibleQueueIds({ queueOrder, filesById, activeFilter, sortMode });
+  const visibleIds = getVisibleQueueIds({ queueOrder, randomQueueOrder, filesById, activeFilter, sortMode, currentFileId: null });
   return visibleIds[0] ?? null;
 }
 
 function resolveCurrentFileIdOrFallback(
   queueOrder: string[],
+  randomQueueOrder: string[],
   filesById: Record<string, FileItem>,
   activeFilter: FilterType,
   sortMode: SortMode,
@@ -423,7 +485,7 @@ function resolveCurrentFileIdOrFallback(
     }
   }
 
-  return resolveCurrentFileId(queueOrder, filesById, activeFilter, sortMode);
+  return resolveCurrentFileId(queueOrder, randomQueueOrder, filesById, activeFilter, sortMode);
 }
 
 function appendActionLog(
@@ -591,6 +653,7 @@ function createUndoEntry(
     previousStatus: active.status,
     previousIsNewSinceLastScan: active.isNewSinceLastScan,
     previousQueueOrder: [...state.queueOrder],
+    previousRandomQueueOrder: [...state.randomQueueOrder],
     previousCurrentFileId: state.currentFileId,
     previousSessionStats: { ...state.sessionStats },
     previousSessionSummary: state.sessionSummary,
@@ -647,6 +710,7 @@ export const useAppStore = create<AppStore>()(
           const resolvedTarget = resetProgress ? targetCount : ((state.targetCount as QuickSessionTarget | null) ?? targetCount);
           const sessionId = resetProgress || !state.sessionId ? createId('session') : state.sessionId;
           const sessionStats = resetProgress ? createEmptySessionStats() : state.sessionStats;
+          const nextRandomQueueOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
           const analyticsEvents =
             sessionId && (resetProgress || !state.sessionId)
               ? appendAnalyticsEventIfEnabled(state, state.analyticsEvents, 'session_start', sessionId)
@@ -661,7 +725,8 @@ export const useAppStore = create<AppStore>()(
             activeMilestone: null,
             undoEntries: resetProgress ? [] : pruneExpiredUndoEntries(state.undoEntries),
             analyticsEvents,
-            currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
+            randomQueueOrder: nextRandomQueueOrder,
+            currentFileId: resolveCurrentFileId(state.queueOrder, nextRandomQueueOrder, state.filesById, state.activeFilter, state.sortMode),
             settings: {
               ...state.settings,
               hasCompletedOnboarding: true,
@@ -671,13 +736,19 @@ export const useAppStore = create<AppStore>()(
       setActiveFilter: (value) =>
         set((state) => ({
           activeFilter: value,
-          currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, value, state.sortMode),
+          currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, state.filesById, value, state.sortMode),
         })),
       setSortMode: (value) =>
-        set((state) => ({
-          sortMode: normalizeSortMode(value),
-          currentFileId: resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, normalizeSortMode(value)),
-        })),
+        set((state) => {
+          const nextSortMode = normalizeSortMode(value);
+          const nextRandomQueueOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
+
+          return {
+            sortMode: nextSortMode,
+            randomQueueOrder: nextRandomQueueOrder,
+            currentFileId: resolveCurrentFileId(state.queueOrder, nextRandomQueueOrder, state.filesById, state.activeFilter, nextSortMode),
+          };
+        }),
       setNightModePreference: (value) =>
         set((state) => ({
           settings: {
@@ -764,10 +835,13 @@ export const useAppStore = create<AppStore>()(
             newFileCount += 1;
           }
 
+          const nextRandomQueueOrder = reconcileRandomQueueOrder(nextQueueOrder, nextFiles, state.randomQueueOrder);
+
           return {
             filesById: nextFiles,
             queueOrder: nextQueueOrder,
-            currentFileId: state.currentFileId ?? resolveCurrentFileId(nextQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            randomQueueOrder: nextRandomQueueOrder,
+            currentFileId: state.currentFileId ?? resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
             scanState: 'scanning' as const,
             scanProgressLoaded: progress.loaded,
             scanProgressTotal: progress.total,
@@ -780,6 +854,7 @@ export const useAppStore = create<AppStore>()(
         set((state) => {
           const completedAt = nowIso();
           const activeFilter = resolveRestorableFilter(state.queueOrder, state.filesById, state.activeFilter);
+          const randomQueueOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
 
           return {
             activeFilter,
@@ -787,7 +862,8 @@ export const useAppStore = create<AppStore>()(
             scanState: 'ready' as const,
             lastCompletedScanAt: completedAt,
             lastRescanSummary: buildRescanSummary(state, completedAt) ?? state.lastRescanSummary,
-            currentFileId: resolveCurrentFileIdOrFallback(state.queueOrder, state.filesById, activeFilter, state.sortMode, state.currentFileId),
+            randomQueueOrder,
+            currentFileId: resolveCurrentFileIdOrFallback(state.queueOrder, randomQueueOrder, state.filesById, activeFilter, state.sortMode, state.currentFileId),
           };
         }),
       failScan: (message) =>
@@ -822,7 +898,7 @@ export const useAppStore = create<AppStore>()(
 
           return {
             filesById: nextFiles,
-            currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -855,13 +931,15 @@ export const useAppStore = create<AppStore>()(
             [active.id]: updatedFile,
           };
           const nextQueueOrder = [...state.queueOrder.filter((fileId) => fileId !== active.id), active.id];
+          const nextRandomQueueOrder = moveFileIdToRandomTail(reconcileRandomQueueOrder(nextQueueOrder, nextFiles, state.randomQueueOrder), active.id);
           const sessionStats = applySuccessfulAction(state.sessionStats, 'skip');
           const artifacts = buildReviewProgressArtifacts(state, 'skip', active.id, sessionStats, source);
 
           return {
             filesById: nextFiles,
             queueOrder: nextQueueOrder,
-            currentFileId: resolveCurrentFileId(nextQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            randomQueueOrder: nextRandomQueueOrder,
+            currentFileId: resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -900,11 +978,13 @@ export const useAppStore = create<AppStore>()(
             [undoEntry.fileId]: restoredFile,
           };
           const nextQueueOrder = [...undoEntry.previousQueueOrder];
+          const nextRandomQueueOrder = reconcileRandomQueueOrder(nextQueueOrder, nextFiles, undoEntry.previousRandomQueueOrder);
 
           return {
             filesById: nextFiles,
             queueOrder: nextQueueOrder,
-            currentFileId: resolveCurrentFileId(nextQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            randomQueueOrder: nextRandomQueueOrder,
+            currentFileId: resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats: undoEntry.previousSessionStats,
             sessionSummary: undoEntry.previousSessionSummary,
             activeMilestone: undoEntry.previousActiveMilestone,
@@ -943,7 +1023,7 @@ export const useAppStore = create<AppStore>()(
 
           return {
             filesById: nextFiles,
-            currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -978,7 +1058,7 @@ export const useAppStore = create<AppStore>()(
 
           return {
             filesById: nextFiles,
-            currentFileId: resolveCurrentFileId(state.queueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -1037,13 +1117,15 @@ export const useAppStore = create<AppStore>()(
         set((state) => {
           const nextFilesById = clearReviewState ? {} : state.filesById;
           const nextQueueOrder = clearReviewState ? [] : state.queueOrder;
+          const nextRandomQueueOrder = clearReviewState ? [] : reconcileRandomQueueOrder(nextQueueOrder, nextFilesById, state.randomQueueOrder);
 
           return {
             currentFileId: clearReviewState
               ? null
-              : state.currentFileId ?? resolveCurrentFileId(state.queueOrder, state.filesById, state.activeFilter, state.sortMode),
+              : state.currentFileId ?? resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFilesById, state.activeFilter, state.sortMode),
             filesById: nextFilesById,
             queueOrder: nextQueueOrder,
+            randomQueueOrder: nextRandomQueueOrder,
             scanState: 'idle',
             scanMode: 'rescan' as const,
             scanError: null,
@@ -1142,18 +1224,20 @@ export const useAppStore = create<AppStore>()(
           : [];
         const filesById = typedPersisted?.filesById ?? currentState.filesById;
         const queueOrder = (typedPersisted?.queueOrder ?? currentState.queueOrder).filter((fileId) => Boolean(filesById[fileId]));
+        const randomQueueOrder = reconcileRandomQueueOrder(queueOrder, filesById, typedPersisted?.randomQueueOrder ?? currentState.randomQueueOrder);
         const sortMode = normalizeSortMode(typedPersisted?.sortMode ?? currentState.sortMode);
         const activeFilter = resolveRestorableFilter(queueOrder, filesById, typedPersisted?.activeFilter ?? currentState.activeFilter);
         const recentSessionSummaries = (typedPersisted?.recentSessionSummaries ?? currentState.recentSessionSummaries)
           .filter((entry) => isWithinRecentDays(entry.completedAt, 90))
           .slice(0, 12);
-        const currentFileId = resolveCurrentFileIdOrFallback(queueOrder, filesById, activeFilter, sortMode, typedPersisted?.currentFileId ?? null);
+        const currentFileId = resolveCurrentFileIdOrFallback(queueOrder, randomQueueOrder, filesById, activeFilter, sortMode, typedPersisted?.currentFileId ?? null);
 
         return {
           ...currentState,
           ...typedPersisted,
           filesById,
           queueOrder,
+          randomQueueOrder,
           currentFileId,
           sortMode,
           activeFilter,
@@ -1193,7 +1277,7 @@ export function selectNextStackItems(state: AppStore): FileItem[] {
   const currentId = state.currentFileId;
   const visibleIds = getVisibleQueueIds(state).filter((fileId) => fileId !== currentId);
 
-  return visibleIds.map((fileId) => state.filesById[fileId]).filter((file): file is FileItem => Boolean(file)).slice(0, 2);
+  return visibleIds.map((fileId) => state.filesById[fileId]).filter((file): file is FileItem => Boolean(file)).slice(0, STACK_PREVIEW_COUNT);
 }
 
 export function selectPendingQueueCount(state: AppStore): number {
