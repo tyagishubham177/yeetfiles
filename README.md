@@ -26,10 +26,13 @@ First-time install or native update:
 
 ```bash
 npx eas login
+npx eas init
 npm run dev:android:eas
 ```
 
 Install the APK from the EAS link/QR on the phone.
+
+If EAS says the project slug does not match the saved project ID, it means the repo still points at an older Expo project. Running `npx eas init` relinks or recreates the correct EAS project for `YeetFiles`.
 
 Normal day-to-day run after the dev build is installed:
 
