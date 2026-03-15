@@ -21,7 +21,8 @@
     "dev:tunnel": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-expo.ps1 -HostMode tunnel -DevClient",
     "ios": "npx expo run:ios",
     "dev:android:eas": "npx eas build --platform android --profile development",
-    "dev:lan": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-expo.ps1 -HostMode lan -DevClient"
+    "dev:lan": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-expo.ps1 -HostMode lan -DevClient",
+    "apk:local": "npx eas build --platform android --profile localapk --local"
   },
   "dependencies": {
     "@expo-google-fonts/dm-sans": "0.4.2",

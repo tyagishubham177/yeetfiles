@@ -17,6 +17,12 @@
         "buildType": "apk"
       }
     },
+    "localapk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "autoIncrement": true
     }
