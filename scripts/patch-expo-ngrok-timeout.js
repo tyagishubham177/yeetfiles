@@ -78,6 +78,52 @@ const mediaStorePermissionsDelegateTarget = path.join(
   'permissions',
   'MediaStorePermissionsDelegate.kt'
 );
+const expoModulesCoreCMakeTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'expo-modules-core',
+  'android',
+  'CMakeLists.txt'
+);
+const reactNativeScreensCMakeTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'react-native-screens',
+  'android',
+  'CMakeLists.txt'
+);
+const reactNativeReanimatedCMakeTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'react-native-reanimated',
+  'android',
+  'CMakeLists.txt'
+);
+const reactNativeWorkletsCMakeTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'react-native-worklets',
+  'android',
+  'CMakeLists.txt'
+);
+const reactNativeGestureHandlerCMakeTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'react-native-gesture-handler',
+  'android',
+  'src',
+  'main',
+  'jni',
+  'CMakeLists.txt'
+);
+const reactNativeApplicationCMakeTarget = path.join(
+  process.cwd(),
+  'node_modules',
+  'react-native',
+  'ReactAndroid',
+  'cmake-utils',
+  'ReactNative-application.cmake'
+);
 
 let changed = false;
 
@@ -234,9 +280,144 @@ changed =
     return updated;
   }) || changed;
 
+changed =
+  patchFile(expoModulesCoreCMakeTarget, (source) =>
+    replaceOnce(
+      source,
+      'target_link_libraries(\n  ${PACKAGE_NAME}\n  android\n',
+      'target_link_libraries(\n  ${PACKAGE_NAME}\n  android\n  c++_shared\n'
+    )
+  ) || changed;
+
+changed =
+  patchFile(reactNativeScreensCMakeTarget, (source) => {
+    let updated = source;
+
+    updated = replaceOnce(
+      updated,
+      `        target_link_libraries(rnscreens
+            ReactAndroid::reactnative
+            ReactAndroid::jsi
+            fbjni::fbjni
+            android
+        )
+`,
+      `        target_link_libraries(rnscreens
+            ReactAndroid::reactnative
+            ReactAndroid::jsi
+            fbjni::fbjni
+            android
+            c++_shared
+        )
+`
+    );
+
+    updated = replaceOnce(
+      updated,
+      `                fbjni::fbjni
+                android
+        )
+`,
+      `                fbjni::fbjni
+                android
+                c++_shared
+        )
+`
+    );
+
+    updated = replaceOnce(
+      updated,
+      `    target_link_libraries(rnscreens
+        ReactAndroid::jsi
+        android
+    )
+`,
+      `    target_link_libraries(rnscreens
+        ReactAndroid::jsi
+        android
+        c++_shared
+    )
+`
+    );
+
+    return updated;
+  }) || changed;
+
+changed =
+  patchFile(reactNativeReanimatedCMakeTarget, (source) =>
+    replaceOnce(
+      source,
+      `target_link_libraries(reanimated log ReactAndroid::jsi fbjni::fbjni android
+                      worklets)
+`,
+      `target_link_libraries(reanimated log ReactAndroid::jsi fbjni::fbjni android
+                      c++_shared worklets)
+`
+    )
+  ) || changed;
+
+changed =
+  patchFile(reactNativeWorkletsCMakeTarget, (source) => {
+    let updated = source;
+
+    updated = replaceOnce(
+      updated,
+      'target_link_libraries(worklets log ReactAndroid::jsi fbjni::fbjni)\n',
+      'target_link_libraries(worklets log ReactAndroid::jsi fbjni::fbjni c++_shared)\n'
+    );
+
+    updated = replaceOnce(
+      updated,
+      `  target_link_libraries(
+    worklets ReactAndroid::react_nativemodule_core ReactAndroid::folly_runtime
+    ReactAndroid::glog ReactAndroid::reactnativejni)
+`,
+      `  target_link_libraries(
+    worklets ReactAndroid::react_nativemodule_core ReactAndroid::folly_runtime
+    ReactAndroid::glog ReactAndroid::reactnativejni c++_shared)
+`
+    );
+
+    return updated;
+  }) || changed;
+
+changed =
+  patchFile(reactNativeGestureHandlerCMakeTarget, (source) =>
+    replaceOnce(
+      source,
+      'target_link_libraries(\n  ${PACKAGE_NAME}\n  ReactAndroid::reactnative\n  ReactAndroid::jsi\n  fbjni::fbjni\n)\n',
+      'target_link_libraries(\n  ${PACKAGE_NAME}\n  ReactAndroid::reactnative\n  ReactAndroid::jsi\n  fbjni::fbjni\n  c++_shared\n)\n'
+    )
+  ) || changed;
+
+changed =
+  patchFile(reactNativeApplicationCMakeTarget, (source) => {
+    let updated = source;
+
+    updated = replaceOnce(
+      updated,
+      'target_link_libraries(${CMAKE_PROJECT_NAME}\n        fbjni                               # via 3rd party prefab\n        jsi                                 # prefab ready\n        reactnative                         # prefab ready\n)\n',
+      'target_link_libraries(${CMAKE_PROJECT_NAME}\n        fbjni                               # via 3rd party prefab\n        jsi                                 # prefab ready\n        reactnative                         # prefab ready\n        c++_shared\n)\n'
+    );
+
+    updated = replaceOnce(
+      updated,
+      'add_library(common_flags INTERFACE)\ntarget_compile_options(common_flags INTERFACE ${folly_FLAGS})\n',
+      'add_library(common_flags INTERFACE)\ntarget_compile_options(common_flags INTERFACE ${folly_FLAGS})\ntarget_link_libraries(common_flags INTERFACE c++_shared)\n'
+    );
+
+    updated = replaceOnce(
+      updated,
+      '        target_link_libraries(${CMAKE_PROJECT_NAME} ${AUTOLINKED_LIBRARIES})\n        foreach(autolinked_library ${AUTOLINKED_LIBRARIES})\n            target_link_libraries(${autolinked_library} common_flags)\n        endforeach()\n',
+      '        foreach(autolinked_library ${AUTOLINKED_LIBRARIES})\n            if(TARGET ${autolinked_library})\n                target_link_libraries(${CMAKE_PROJECT_NAME} ${autolinked_library})\n                target_link_libraries(${autolinked_library} common_flags)\n            endif()\n        endforeach()\n'
+    );
+
+    return updated;
+  }) || changed;
+
 if (!changed) {
   console.log('Expo ngrok patch already applied.');
   process.exit(0);
 }
 
-console.log('Patched Expo/ngrok and media-library guards.');
+console.log('Patched Expo/ngrok, media-library guards, and Android native CMake linkage.');
