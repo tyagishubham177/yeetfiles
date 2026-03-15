@@ -16,7 +16,13 @@ export function Sheet({ visible, onClose, children }: SheetProps) {
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
       <View style={[styles.overlay, { backgroundColor: colors.scrim }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[styles.sheet, { backgroundColor: colors.surface, borderTopWidth: isNightMode ? 1 : 0, borderColor: colors.outline }]}>{children}</View>
+        <View style={[styles.sheet, { backgroundColor: colors.surface, borderTopWidth: isNightMode ? 1 : 0, borderColor: colors.outline }]}>
+          {/* Drag handle indicator */}
+          <View style={styles.handleWrap}>
+            <View style={[styles.handle, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.12)' }]} />
+          </View>
+          {children}
+        </View>
       </View>
     </Modal>
   );
@@ -31,8 +37,17 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xl,
     gap: spacing.md,
+  },
+  handleWrap: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
   },
 });
