@@ -1,6 +1,17 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Linking, Pressable, RefreshControl, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  Linking,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
@@ -23,7 +34,10 @@ import { Button } from '../../src/components/ui/button';
 import { ROUTES } from '../../src/constants/routes';
 import { radius, spacing, typography } from '../../src/constants/ui-tokens';
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
-import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../../src/features/permissions/permission-service';
+import {
+  requestMediaPermissionState,
+  MEDIA_PERMISSION_BLOCKED_HELP,
+} from '../../src/features/permissions/permission-service';
 import { useDeleteFlow } from '../../src/hooks/queue/use-delete-flow';
 import { useDirectDeleteStatus } from '../../src/hooks/queue/use-direct-delete-status';
 import { useMoveFlow } from '../../src/hooks/queue/use-move-flow';
@@ -81,6 +95,7 @@ export default function QueueScreen() {
   const setPermissionState = useAppStore((state) => state.setPermissionState);
   const setActiveFilter = useAppStore((state) => state.setActiveFilter);
   const setSortMode = useAppStore((state) => state.setSortMode);
+  const terminateSession = useAppStore((state) => state.terminateSession);
   const undoLastAction = useAppStore((state) => state.undoLastAction);
   const pruneExpiredUndoEntries = useAppStore((state) => state.pruneExpiredUndoEntries);
   const dismissMilestone = useAppStore((state) => state.dismissMilestone);
@@ -89,15 +104,22 @@ export default function QueueScreen() {
   const recentMoveTargets = useAppStore((state) => state.recentMoveTargets);
   const settings = useAppStore((state) => state.settings);
   const markGestureTutorialSeen = useAppStore((state) => state.markGestureTutorialSeen);
-  const { keepCurrent, skipCurrent, deleteCurrent, moveCurrent, isDeleting, isMoving } = useReviewActions();
+  const { keepCurrent, skipCurrent, deleteCurrent, moveCurrent, isDeleting, isMoving } =
+    useReviewActions();
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [secondaryActionsOpen, setSecondaryActionsOpen] = useState(false);
   const [isCheckingPermission, setIsCheckingPermission] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [statusFeedback, setStatusFeedback] = useState<{ tone: 'info' | 'success' | 'error'; message: string } | null>(null);
+  const [statusFeedback, setStatusFeedback] = useState<{
+    tone: 'info' | 'success' | 'error';
+    message: string;
+  } | null>(null);
   const directDeleteStatus = useDirectDeleteStatus();
-  const { scanProgressRatio, scanProgressLabel } = useScanProgress(scanProgressLoaded, scanProgressTotal);
+  const { scanProgressRatio, scanProgressLabel } = useScanProgress(
+    scanProgressLoaded,
+    scanProgressTotal,
+  );
   const {
     moveSheetOpen,
     selectedMoveTarget,
@@ -135,8 +157,8 @@ export default function QueueScreen() {
   }, [setSortMode, sortMode]);
 
   const remainingCount = useMemo(() => {
-    if (!targetCount) {
-      return 0;
+    if (targetCount === null) {
+      return null;
     }
 
     return Math.max(targetCount - sessionStats.reviewedCount, 0);
@@ -144,12 +166,20 @@ export default function QueueScreen() {
 
   const blocked = permissionState === 'blocked';
   const permissionMissing = permissionState === 'denied' || permissionState === 'blocked';
-  const sessionLabel = getQuickSessionLabel((targetCount as 10 | 25 | 50 | null) ?? 10);
+  const sessionLabel = getQuickSessionLabel(targetCount ?? null);
   const sortLabel = getSortLabel(sortMode);
-  const filterEmpty = !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
-  const libraryEmpty = !currentFile && pendingQueueCount === 0 && scanState !== 'scanning' && Boolean(lastCompletedScanAt);
+  const filterEmpty =
+    !currentFile && visibleQueueCount === 0 && pendingQueueCount > 0 && activeFilter !== 'all';
+  const libraryEmpty =
+    !currentFile &&
+    pendingQueueCount === 0 &&
+    scanState !== 'scanning' &&
+    Boolean(lastCompletedScanAt);
   const activeFilterLabel = useAppStore((state) => getActiveFilterLabel(state));
-  const showTutorialCard = Boolean(currentFile && !settings.hasSeenGestureTutorial && sessionStats.reviewedCount === 0);
+  const showTutorialCard = Boolean(
+    currentFile && !settings.hasSeenGestureTutorial && sessionStats.reviewedCount === 0,
+  );
+  const canTerminateSession = sessionStats.reviewedCount > 0;
   const rescanStatusLabel =
     scanMode === 'rescan' && scanState === 'scanning'
       ? currentScanNewFileCount > 0
@@ -194,7 +224,9 @@ export default function QueueScreen() {
   }, [statusFeedback]);
 
   useEffect(() => {
-    const uris = [currentFile?.previewUri, ...nextItems.map((item) => item.previewUri)].filter(Boolean) as string[];
+    const uris = [currentFile?.previewUri, ...nextItems.map((item) => item.previewUri)].filter(
+      Boolean,
+    ) as string[];
 
     uris.forEach((uri) => {
       void Image.prefetch(uri).catch(() => null);
@@ -309,6 +341,27 @@ export default function QueueScreen() {
   };
 
   const busy = isDeleting || isMoving;
+  const handleTerminateSession = () => {
+    if (!canTerminateSession) {
+      return;
+    }
+
+    Alert.alert(
+      'Terminate session?',
+      targetCount === null
+        ? `Wrap the infinite run now and open stats for ${sessionStats.reviewedCount} reviewed photo${sessionStats.reviewedCount === 1 ? '' : 's'}.`
+        : `Wrap ${getQuickSessionLabel(targetCount)} now and keep stats for ${sessionStats.reviewedCount} reviewed photo${sessionStats.reviewedCount === 1 ? '' : 's'}.`,
+      [
+        { text: 'Keep swiping', style: 'cancel' },
+        {
+          text: 'Terminate',
+          style: 'destructive',
+          onPress: () => terminateSession(),
+        },
+      ],
+    );
+  };
+
   const handleRescanRequest = () => {
     setStatusFeedback({
       tone: 'info',
@@ -320,12 +373,23 @@ export default function QueueScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.stage }]} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.stage }]}
+      edges={['top', 'bottom']}
+    >
       <StatusBar style="light" />
       <View style={[styles.backgroundGlowA, { backgroundColor: colors.stageGlow }]} />
-      <View style={[styles.backgroundGlowB, { backgroundColor: isNightMode ? 'rgba(217,162,59,0.05)' : 'rgba(243,180,63,0.1)' }]} />
+      <View
+        style={[
+          styles.backgroundGlowB,
+          { backgroundColor: isNightMode ? 'rgba(217,162,59,0.05)' : 'rgba(243,180,63,0.1)' },
+        ]}
+      />
       <ScrollView
-        contentContainerStyle={[styles.content, !showTutorialCard && currentFile ? styles.contentWithFooter : null]}
+        contentContainerStyle={[
+          styles.content,
+          !showTutorialCard && currentFile ? styles.contentWithFooter : null,
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={scanState === 'scanning' && scanMode === 'rescan'}
@@ -341,7 +405,14 @@ export default function QueueScreen() {
             onPress={() => router.push(ROUTES.settings)}
             style={({ pressed }) => pressed && styles.linkPressed}
           >
-            <Text style={[styles.settingsLink, { color: isNightMode ? 'rgba(245,247,250,0.78)' : 'rgba(249,250,251,0.84)' }]}>Settings</Text>
+            <Text
+              style={[
+                styles.settingsLink,
+                { color: isNightMode ? 'rgba(245,247,250,0.78)' : 'rgba(249,250,251,0.84)' },
+              ]}
+            >
+              Settings
+            </Text>
           </Pressable>
         </View>
 
@@ -360,8 +431,52 @@ export default function QueueScreen() {
           scanProgressTotal={scanProgressTotal}
         />
 
-        <FilterChipRow activeFilter={activeFilter} chips={filterChips} onSelect={(filter) => setActiveFilter(filter)} />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
+        <View
+          style={[
+            styles.sessionControlCard,
+            {
+              backgroundColor: isNightMode ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)',
+              borderColor: isNightMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.1)',
+            },
+          ]}
+        >
+          <View style={styles.sessionControlCopy}>
+            <Text style={[styles.sessionControlTitle, { color: colors.white }]}>
+              {targetCount === null ? 'Infinite session is live' : 'Need to wrap early?'}
+            </Text>
+            <Text
+              style={[
+                styles.sessionControlBody,
+                { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' },
+              ]}
+            >
+              {canTerminateSession
+                ? targetCount === null
+                  ? 'Keep swiping at your own pace, then terminate when you want a session summary.'
+                  : 'You can end this pass whenever you want and still get the session stats.'
+                : 'Stats unlock after your first keep, skip, move, or delete.'}
+            </Text>
+          </View>
+          <Button
+            label="Terminate session"
+            onPress={handleTerminateSession}
+            variant="secondary"
+            compact
+            disabled={!canTerminateSession}
+            style={styles.terminateButton}
+          />
+        </View>
+
+        <FilterChipRow
+          activeFilter={activeFilter}
+          chips={filterChips}
+          onSelect={(filter) => setActiveFilter(filter)}
+        />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.sortRow}
+        >
           {SORT_OPTIONS.map((option) => {
             const selected = option === sortMode;
 
@@ -373,12 +488,29 @@ export default function QueueScreen() {
                 onPress={() => setSortMode(option)}
                 style={({ pressed }) => [
                   styles.sortChip,
-                  { backgroundColor: isNightMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.06)' },
-                  selected && { backgroundColor: isNightMode ? 'rgba(76,151,232,0.2)' : 'rgba(60,145,230,0.28)' },
+                  {
+                    backgroundColor: isNightMode
+                      ? 'rgba(255,255,255,0.05)'
+                      : 'rgba(255,255,255,0.06)',
+                  },
+                  selected && {
+                    backgroundColor: isNightMode ? 'rgba(76,151,232,0.2)' : 'rgba(60,145,230,0.28)',
+                  },
                   pressed && styles.pressedChip,
                 ]}
               >
-                <Text style={[styles.sortChipLabel, { color: selected ? colors.white : isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
+                <Text
+                  style={[
+                    styles.sortChipLabel,
+                    {
+                      color: selected
+                        ? colors.white
+                        : isNightMode
+                          ? 'rgba(245,247,250,0.72)'
+                          : 'rgba(249,250,251,0.78)',
+                    },
+                  ]}
+                >
                   {getSortLabel(option)}
                 </Text>
               </Pressable>
@@ -397,21 +529,41 @@ export default function QueueScreen() {
               },
             ]}
           >
-            <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>Storage is getting tight</Text>
-            <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
-              About {formatBytes(lowStorageWarning.freeBytes)} free right now. This is a good time for a short cleanup pass.
+            <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
+              Storage is getting tight
+            </Text>
+            <Text
+              style={[
+                styles.rescanInfoBody,
+                { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' },
+              ]}
+            >
+              About {formatBytes(lowStorageWarning.freeBytes)} free right now. This is a good time
+              for a short cleanup pass.
             </Text>
           </View>
         ) : null}
-        {statusFeedback ? <StatusBanner message={statusFeedback.message} tone={statusFeedback.tone} /> : null}
+        {statusFeedback ? (
+          <StatusBanner message={statusFeedback.message} tone={statusFeedback.tone} />
+        ) : null}
 
         <QueueErrorBoundary>
           {permissionMissing ? (
-            <PermissionPanel blocked={blocked} isRetrying={isCheckingPermission} onRetry={() => void retryPermission()} onOpenSettings={() => void Linking.openSettings()} />
+            <PermissionPanel
+              blocked={blocked}
+              isRetrying={isCheckingPermission}
+              onRetry={() => void retryPermission()}
+              onOpenSettings={() => void Linking.openSettings()}
+            />
           ) : currentFile ? (
             <>
               <View style={styles.scanRow}>
-                <Text style={[styles.scanText, { color: isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' }]}>
+                <Text
+                  style={[
+                    styles.scanText,
+                    { color: isNightMode ? 'rgba(245,247,250,0.72)' : 'rgba(249,250,251,0.78)' },
+                  ]}
+                >
                   {scanState === 'scanning'
                     ? scanMode === 'rescan'
                       ? `Re-scanning in background${scanProgressTotal ? ` / ${scanProgressLoaded}/${scanProgressTotal}` : ` / ${scanProgressLoaded}`}`
@@ -420,20 +572,33 @@ export default function QueueScreen() {
                       ? `${newSinceLastScanCount} new since last scan`
                       : 'Queue is live'}
                 </Text>
-                {scanError ? <Text style={[styles.scanError, { color: isNightMode ? '#F2C3B8' : '#FFC2B4' }]}>{scanError}</Text> : null}
+                {scanError ? (
+                  <Text style={[styles.scanError, { color: isNightMode ? '#F2C3B8' : '#FFC2B4' }]}>
+                    {scanError}
+                  </Text>
+                ) : null}
               </View>
               {rescanStatusLabel ? (
                 <View
                   style={[
                     styles.rescanInfoCard,
                     {
-                      backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
+                      backgroundColor: isNightMode
+                        ? 'rgba(217,162,59,0.1)'
+                        : 'rgba(243,180,63,0.14)',
                       borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
                     },
                   ]}
                 >
-                  <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>{rescanStatusLabel}</Text>
-                  <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+                  <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
+                    {rescanStatusLabel}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.rescanInfoBody,
+                      { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' },
+                    ]}
+                  >
                     Known photos stay matched to their earlier review state while this pass runs.
                   </Text>
                 </View>
@@ -466,9 +631,16 @@ export default function QueueScreen() {
                   ]}
                 >
                   <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
-                    {directDeleteStatus === 'ready' ? 'Direct delete is active' : 'Android delete popup is still active'}
+                    {directDeleteStatus === 'ready'
+                      ? 'Direct delete is active'
+                      : 'Android delete popup is still active'}
                   </Text>
-                  <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
+                  <Text
+                    style={[
+                      styles.rescanInfoBody,
+                      { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' },
+                    ]}
+                  >
                     {directDeleteStatus === 'ready'
                       ? 'Deletes should go straight through without the extra confirmation.'
                       : 'Open Settings to check special access or confirm this build includes the native delete engine.'}
@@ -480,16 +652,26 @@ export default function QueueScreen() {
                   style={[
                     styles.rescanInfoCard,
                     {
-                      backgroundColor: isNightMode ? 'rgba(217,162,59,0.1)' : 'rgba(243,180,63,0.14)',
+                      backgroundColor: isNightMode
+                        ? 'rgba(217,162,59,0.1)'
+                        : 'rgba(243,180,63,0.14)',
                       borderColor: isNightMode ? 'rgba(217,162,59,0.18)' : 'rgba(243,180,63,0.28)',
                     },
                   ]}
                 >
                   <Text style={[styles.rescanInfoTitle, { color: colors.white }]}>
-                    Last re-scan added {lastRescanSummary.newFileCount} new photo{lastRescanSummary.newFileCount === 1 ? '' : 's'}
+                    Last re-scan added {lastRescanSummary.newFileCount} new photo
+                    {lastRescanSummary.newFileCount === 1 ? '' : 's'}
                   </Text>
-                  <Text style={[styles.rescanInfoBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' }]}>
-                    {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} stayed protected. {formatDateTime(lastRescanSummary.completedAt)}
+                  <Text
+                    style={[
+                      styles.rescanInfoBody,
+                      { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.8)' },
+                    ]}
+                  >
+                    {lastRescanSummary.protectedReviewedCount} reviewed item
+                    {lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} stayed protected.{' '}
+                    {formatDateTime(lastRescanSummary.completedAt)}
                   </Text>
                 </View>
               ) : null}
@@ -531,20 +713,53 @@ export default function QueueScreen() {
                   },
                 ]}
               >
-                <Text style={[styles.scanLoadingEyebrow, { color: isNightMode ? 'rgba(245,247,250,0.66)' : 'rgba(249,250,251,0.7)' }]}>
+                <Text
+                  style={[
+                    styles.scanLoadingEyebrow,
+                    { color: isNightMode ? 'rgba(245,247,250,0.66)' : 'rgba(249,250,251,0.7)' },
+                  ]}
+                >
                   {scanMode === 'rescan' ? 'Re-scan in progress' : 'Scan in progress'}
                 </Text>
-                <Text style={[styles.scanLoadingTitle, { color: colors.white }]}>{scanProgressLabel}</Text>
-                <Text style={[styles.scanLoadingBody, { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' }]}>
+                <Text style={[styles.scanLoadingTitle, { color: colors.white }]}>
+                  {scanProgressLabel}
+                </Text>
+                <Text
+                  style={[
+                    styles.scanLoadingBody,
+                    { color: isNightMode ? 'rgba(245,247,250,0.76)' : 'rgba(249,250,251,0.82)' },
+                  ]}
+                >
                   {scanMode === 'rescan'
                     ? 'We are checking the library again and only adding photos we have not already matched.'
                     : 'We are building your queue now. As soon as the first photo is ready, it will replace this panel.'}
                 </Text>
-                <View style={[styles.scanProgressTrack, { backgroundColor: isNightMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.08)' }]}>
-                  <View style={[styles.scanProgressFill, { width: `${scanProgressRatio * 100}%`, backgroundColor: colors.highlight }]} />
+                <View
+                  style={[
+                    styles.scanProgressTrack,
+                    {
+                      backgroundColor: isNightMode
+                        ? 'rgba(255,255,255,0.06)'
+                        : 'rgba(255,255,255,0.08)',
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.scanProgressFill,
+                      { width: `${scanProgressRatio * 100}%`, backgroundColor: colors.highlight },
+                    ]}
+                  />
                 </View>
-                <Text style={[styles.scanLoadingHint, { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' }]}>
-                  {scanProgressTotal ? `${Math.round(scanProgressRatio * 100)}% complete` : 'This can take longer on larger libraries.'}
+                <Text
+                  style={[
+                    styles.scanLoadingHint,
+                    { color: isNightMode ? 'rgba(245,247,250,0.64)' : 'rgba(249,250,251,0.7)' },
+                  ]}
+                >
+                  {scanProgressTotal
+                    ? `${Math.round(scanProgressRatio * 100)}% complete`
+                    : 'This can take longer on larger libraries.'}
                 </Text>
                 <View style={styles.scanLoadingActions}>
                   <Button label="Restart scan" onPress={handleRescanRequest} variant="secondary" />
@@ -562,14 +777,24 @@ export default function QueueScreen() {
             </View>
           ) : (
             <View style={styles.emptyWrap}>
-              <EmptyState title="No photo cards ready yet" body="Try a fresh scan, then come back into the queue." actionLabel="Scan again" onAction={handleRescanRequest} />
+              <EmptyState
+                title="No photo cards ready yet"
+                body="Try a fresh scan, then come back into the queue."
+                actionLabel="Scan again"
+                onAction={handleRescanRequest}
+              />
             </View>
           )}
         </QueueErrorBoundary>
       </ScrollView>
 
       {topUndoEntry ? (
-        <View style={[styles.undoToastWrap, currentFile && !showTutorialCard ? styles.undoToastWithDock : null]}>
+        <View
+          style={[
+            styles.undoToastWrap,
+            currentFile && !showTutorialCard ? styles.undoToastWithDock : null,
+          ]}
+        >
           <UndoToast entry={topUndoEntry} onUndo={handleUndo} />
         </View>
       ) : null}
@@ -763,6 +988,32 @@ const styles = StyleSheet.create({
   },
   scanLoadingActions: {
     marginTop: spacing.xs,
+  },
+  sessionControlCard: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  sessionControlCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  sessionControlTitle: {
+    fontFamily: typography.bold,
+    fontSize: 15,
+  },
+  sessionControlBody: {
+    fontFamily: typography.body,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  terminateButton: {
+    minWidth: 148,
   },
   sortRow: {
     gap: spacing.sm,

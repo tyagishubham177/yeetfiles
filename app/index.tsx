@@ -20,13 +20,28 @@ import { StatusBanner } from '../src/components/feedback/status-banner';
 import { Button } from '../src/components/ui/button';
 import { ROUTES } from '../src/constants/routes';
 import { radius, shadows, spacing, typography } from '../src/constants/ui-tokens';
-import { requestMediaPermissionState, MEDIA_PERMISSION_BLOCKED_HELP } from '../src/features/permissions/permission-service';
+import {
+  requestMediaPermissionState,
+  MEDIA_PERMISSION_BLOCKED_HELP,
+} from '../src/features/permissions/permission-service';
 import { formatBytes, formatDuration } from '../src/lib/format';
 import { useAppTheme } from '../src/lib/theme';
 import { getQuickSessionLabel, useAppStore } from '../src/store/app-store';
 import type { QuickSessionTarget } from '../src/types/file-item';
 
-const SESSION_OPTIONS: QuickSessionTarget[] = [10, 25, 50];
+type SessionOption = {
+  target: QuickSessionTarget | null;
+  display: string;
+  label: string;
+  hint: string;
+};
+
+const SESSION_OPTIONS: SessionOption[] = [
+  { target: 10, display: '10', label: 'photos', hint: '~2 min' },
+  { target: 20, display: '20', label: 'photos', hint: '~4 min' },
+  { target: 50, display: '50', label: 'photos', hint: '~10 min' },
+  { target: null, display: 'Infinite', label: 'open run', hint: 'terminate anytime' },
+];
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -43,9 +58,15 @@ export default function WelcomeScreen() {
   const lastCompletedScanAt = useAppStore((state) => state.lastCompletedScanAt);
   const hasCompletedOnboarding = useAppStore((state) => state.settings.hasCompletedOnboarding);
   const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
+  const initialSelectedTarget =
+    targetCount === null || targetCount === 10 || targetCount === 20 || targetCount === 50
+      ? targetCount
+      : 10;
   const [busy, setBusy] = useState(false);
   const [launchMessage, setLaunchMessage] = useState<string | null>(null);
-  const [selectedTarget, setSelectedTarget] = useState<QuickSessionTarget>((targetCount as QuickSessionTarget | null) ?? 10);
+  const [selectedTarget, setSelectedTarget] = useState<QuickSessionTarget | null>(
+    initialSelectedTarget,
+  );
 
   // Ambient orb animations
   const orbAFloatY = useSharedValue(0);
@@ -56,21 +77,21 @@ export default function WelcomeScreen() {
     orbAFloatY.value = withRepeat(
       withSequence(
         withTiming(8, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
-        withTiming(-8, { duration: 3000, easing: Easing.inOut(Easing.sin) })
+        withTiming(-8, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
-      true
+      true,
     );
     orbBFloatY.value = withDelay(
       1200,
       withRepeat(
         withSequence(
           withTiming(-6, { duration: 2800, easing: Easing.inOut(Easing.sin) }),
-          withTiming(6, { duration: 2800, easing: Easing.inOut(Easing.sin) })
+          withTiming(6, { duration: 2800, easing: Easing.inOut(Easing.sin) }),
         ),
         -1,
-        true
-      )
+        true,
+      ),
     );
   }, [animationsEnabled, orbAFloatY, orbBFloatY]);
 
@@ -84,7 +105,7 @@ export default function WelcomeScreen() {
 
   const dashboardLabel = useMemo(() => getQuickSessionLabel(selectedTarget), [selectedTarget]);
 
-  const goToQueue = async (nextTarget: QuickSessionTarget) => {
+  const goToQueue = async (nextTarget: QuickSessionTarget | null) => {
     setBusy(true);
     setLaunchMessage('Checking photo access and warming up a fresh session...');
 
@@ -112,7 +133,10 @@ export default function WelcomeScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.canvas }]}
+      edges={['top', 'left', 'right']}
+    >
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroWrap}>
@@ -157,13 +181,14 @@ export default function WelcomeScreen() {
             style={[styles.title, { color: colors.ink }]}
           >
             Short cleanup sessions{'\n'}should feel like{'\n'}
-            <Text style={[styles.titleHighlight, { color: colors.progress }]}>momentum</Text>, not admin.
+            <Text style={[styles.titleHighlight, { color: colors.progress }]}>momentum</Text>, not
+            admin.
           </Animated.Text>
           <Animated.Text
             entering={animationsEnabled ? FadeInDown.duration(500).delay(450) : undefined}
             style={[styles.subtitle, { color: colors.mutedInk }]}
           >
-            Pick a session length, start with one card, and keep every delete honest.
+            Pick a short burst or go infinite, then keep every delete honest.
           </Animated.Text>
         </View>
 
@@ -177,48 +202,91 @@ export default function WelcomeScreen() {
             },
           ]}
         >
-          <Text style={[styles.panelTitle, { color: colors.ink }]}>{hasCompletedOnboarding ? 'Return for another pass' : 'Choose your quick session'}</Text>
-          <Text style={[styles.panelBody, { color: colors.mutedInk }]}>Photos only. Local only. Undo stays honest by covering safe review actions only.</Text>
+          <Text style={[styles.panelTitle, { color: colors.ink }]}>
+            {hasCompletedOnboarding ? 'Return for another pass' : 'Choose your cleanup lane'}
+          </Text>
+          <Text style={[styles.panelBody, { color: colors.mutedInk }]}>
+            Photos only. Local only. Short bursts stay fast, and infinite runs stay open until you
+            terminate them for stats.
+          </Text>
 
           {lowStorageWarning ? (
-            <View style={[styles.warningCard, { backgroundColor: isDark ? 'rgba(240,130,105,0.1)' : '#FFF0EA', borderColor: isDark ? 'rgba(240,130,105,0.16)' : '#F4C7B9' }]}>
+            <View
+              style={[
+                styles.warningCard,
+                {
+                  backgroundColor: isDark ? 'rgba(240,130,105,0.1)' : '#FFF0EA',
+                  borderColor: isDark ? 'rgba(240,130,105,0.16)' : '#F4C7B9',
+                },
+              ]}
+            >
               <View style={styles.warningIcon}>
                 <Text style={styles.warningIconText}>⚠</Text>
               </View>
               <View style={styles.warningContent}>
-                <Text style={[styles.warningTitle, { color: colors.ink }]}>Storage is getting tight</Text>
-                <Text style={[styles.warningBody, { color: colors.mutedInk }]}>Only about {formatBytes(lowStorageWarning.freeBytes)} free right now. YeetFiles can help you clear space before Android starts feeling cramped.</Text>
+                <Text style={[styles.warningTitle, { color: colors.ink }]}>
+                  Storage is getting tight
+                </Text>
+                <Text style={[styles.warningBody, { color: colors.mutedInk }]}>
+                  Only about {formatBytes(lowStorageWarning.freeBytes)} free right now. YeetFiles
+                  can help you clear space before Android starts feeling cramped.
+                </Text>
               </View>
             </View>
           ) : null}
 
-          <View style={styles.sessionChoiceRow}>
+          <View style={styles.sessionChoiceGrid}>
             {SESSION_OPTIONS.map((option) => {
-              const selected = option === selectedTarget;
+              const selected = option.target === selectedTarget;
+              const isInfinite = option.target === null;
 
               return (
                 <AnimatedPressable
-                  key={option}
+                  key={option.target ?? 'infinite'}
                   accessibilityRole="button"
-                  onPress={() => setSelectedTarget(option)}
+                  onPress={() => setSelectedTarget(option.target)}
                   style={[
                     styles.sessionChip,
                     {
                       backgroundColor: selected
-                        ? (isDark ? 'rgba(97,168,244,0.12)' : 'rgba(60,145,230,0.08)')
+                        ? isDark
+                          ? 'rgba(97,168,244,0.12)'
+                          : 'rgba(60,145,230,0.08)'
                         : colors.surfaceMuted,
                       borderColor: selected
-                        ? (isDark ? colors.progress : colors.accentGradientStart)
-                        : (isDark ? colors.outline : 'transparent'),
+                        ? isDark
+                          ? colors.progress
+                          : colors.accentGradientStart
+                        : isDark
+                          ? colors.outline
+                          : 'transparent',
                     },
                   ]}
                 >
-                  <Text style={[styles.sessionChipCount, { color: selected ? colors.progress : colors.ink }]}>{option}</Text>
-                  <Text style={[styles.sessionChipLabel, { color: selected ? colors.progress : colors.ink }]}>
-                    {option === 10 ? 'photos' : option === 25 ? 'photos' : 'photos'}
+                  <Text
+                    style={[
+                      styles.sessionChipCount,
+                      isInfinite ? styles.sessionChipCountLong : null,
+                      { color: selected ? colors.progress : colors.ink },
+                    ]}
+                  >
+                    {option.display}
                   </Text>
-                  <Text style={[styles.sessionChipSubtle, { color: selected ? colors.progress : colors.mutedInk }]}>
-                    {option === 10 ? '~2 min' : option === 25 ? '~5 min' : '~10 min'}
+                  <Text
+                    style={[
+                      styles.sessionChipLabel,
+                      { color: selected ? colors.progress : colors.ink },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.sessionChipSubtle,
+                      { color: selected ? colors.progress : colors.mutedInk },
+                    ]}
+                  >
+                    {option.hint}
                   </Text>
                 </AnimatedPressable>
               );
@@ -226,15 +294,29 @@ export default function WelcomeScreen() {
           </View>
 
           {sessionSummary ? (
-            <View style={[styles.lastSession, { backgroundColor: isDark ? colors.surfaceMuted : '#F0F4FA', borderColor: isDark ? colors.outline : 'transparent' }]}>
+            <View
+              style={[
+                styles.lastSession,
+                {
+                  backgroundColor: isDark ? colors.surfaceMuted : '#F0F4FA',
+                  borderColor: isDark ? colors.outline : 'transparent',
+                },
+              ]}
+            >
               <View style={styles.lastSessionHeader}>
                 <View style={[styles.lastSessionDot, { backgroundColor: colors.keep }]} />
                 <Text style={[styles.lastSessionTitle, { color: colors.ink }]}>Last pass</Text>
               </View>
               <Text style={[styles.lastSessionBody, { color: colors.mutedInk }]}>
-                {sessionSummary.reviewedCount} reviewed / {formatBytes(sessionSummary.storageFreedBytes)} freed / {formatDuration(sessionSummary.durationMs)}
+                {sessionSummary.reviewedCount} reviewed /{' '}
+                {formatBytes(sessionSummary.storageFreedBytes)} freed /{' '}
+                {formatDuration(sessionSummary.durationMs)}
               </Text>
-              {lastCompletedScanAt ? <Text style={[styles.lastSessionHint, { color: colors.mutedInk }]}>Queue refreshed recently, so you can jump back in fast.</Text> : null}
+              {lastCompletedScanAt ? (
+                <Text style={[styles.lastSessionHint, { color: colors.mutedInk }]}>
+                  Queue refreshed recently, so you can jump back in fast.
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -249,15 +331,26 @@ export default function WelcomeScreen() {
 
           {launchMessage ? <StatusBanner message={launchMessage} /> : null}
 
-          <View style={[styles.trustNote, { borderTopColor: isDark ? colors.outline : colors.glassBorder }]}>
+          <View
+            style={[
+              styles.trustNote,
+              { borderTopColor: isDark ? colors.outline : colors.glassBorder },
+            ]}
+          >
             <View style={styles.trustHeader}>
-              <View style={[styles.trustShield, { backgroundColor: isDark ? 'rgba(97,168,244,0.12)' : 'rgba(60,145,230,0.08)' }]}>
+              <View
+                style={[
+                  styles.trustShield,
+                  { backgroundColor: isDark ? 'rgba(97,168,244,0.12)' : 'rgba(60,145,230,0.08)' },
+                ]}
+              >
                 <Text style={[styles.trustShieldIcon, { color: colors.progress }]}>✦</Text>
               </View>
               <Text style={[styles.trustTitle, { color: colors.ink }]}>Trust note</Text>
             </View>
             <Text style={[styles.trustBody, { color: colors.mutedInk }]}>
-              No cloud upload. No hidden deletes. Your earlier keep, skip, and delete decisions now stay durable across app restarts unless you explicitly run a clean rebuild.
+              No cloud upload. No hidden deletes. Your earlier keep, skip, and delete decisions now
+              stay durable across app restarts unless you explicitly run a clean rebuild.
             </Text>
           </View>
         </Animated.View>
@@ -380,12 +473,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
   },
-  sessionChoiceRow: {
+  sessionChoiceGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
   sessionChip: {
-    flex: 1,
+    flexBasis: '48%',
     borderRadius: radius.md,
     borderWidth: 1.5,
     padding: spacing.md,
@@ -396,6 +490,10 @@ const styles = StyleSheet.create({
     fontFamily: typography.display,
     fontSize: 28,
     lineHeight: 34,
+  },
+  sessionChipCountLong: {
+    fontSize: 22,
+    lineHeight: 28,
   },
   sessionChipLabel: {
     fontFamily: typography.medium,
