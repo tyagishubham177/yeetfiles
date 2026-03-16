@@ -8,6 +8,11 @@ expo-env.d.ts
 
 node_modules/
 android/
+!modules/expo-direct-delete/android/
+!modules/expo-direct-delete/android/build.gradle
+!modules/expo-direct-delete/android/src/
+!modules/expo-direct-delete/android/src/**
+modules/expo-direct-delete/android/build/
 dist/
 build/
 

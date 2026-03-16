@@ -1,3 +1,4 @@
+import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
 import {
   canManageMediaAsync as callDirectDeleteManageMediaCheck,
@@ -5,6 +6,19 @@ import {
   isExpoDirectDeleteModuleAvailable,
   presentManageMediaPermissionPickerAsync as presentDirectDeletePermissionPickerAsync,
 } from '../../../modules/expo-direct-delete/src';
+
+type ExpoMediaLibraryManageMediaModule = {
+  canManageMediaAsync?: () => Promise<boolean>;
+  presentManageMediaPermissionPickerAsync?: () => Promise<boolean>;
+  deleteAssetsDirectAsync?: (assetIds: string[]) => Promise<boolean>;
+};
+
+const expoMediaLibraryManageMediaModule =
+  requireOptionalNativeModule<ExpoMediaLibraryManageMediaModule>('ExpoMediaLibrary');
+
+function hasExpoMediaLibraryDirectDeleteSupport() {
+  return typeof expoMediaLibraryManageMediaModule?.deleteAssetsDirectAsync === 'function';
+}
 
 export function supportsManageMediaAccess() {
   return Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 31;
@@ -15,7 +29,7 @@ export function hasNativeDirectDeleteSupport() {
     return false;
   }
 
-  return isExpoDirectDeleteModuleAvailable;
+  return isExpoDirectDeleteModuleAvailable || hasExpoMediaLibraryDirectDeleteSupport();
 }
 
 export async function canManageMediaAsync() {
@@ -24,7 +38,11 @@ export async function canManageMediaAsync() {
   }
 
   try {
-    return await callDirectDeleteManageMediaCheck();
+    if (isExpoDirectDeleteModuleAvailable) {
+      return await callDirectDeleteManageMediaCheck();
+    }
+
+    return (await expoMediaLibraryManageMediaModule?.canManageMediaAsync?.()) ?? false;
   } catch {
     return false;
   }
@@ -36,7 +54,11 @@ export async function presentManageMediaPermissionPickerAsync() {
   }
 
   try {
-    return await presentDirectDeletePermissionPickerAsync();
+    if (isExpoDirectDeleteModuleAvailable) {
+      return await presentDirectDeletePermissionPickerAsync();
+    }
+
+    return (await expoMediaLibraryManageMediaModule?.presentManageMediaPermissionPickerAsync?.()) ?? false;
   } catch {
     return false;
   }
@@ -47,5 +69,9 @@ export async function deleteAssetsDirectAsync(assetIds: string[]) {
     return false;
   }
 
-  return await callDirectDeleteAssets(assetIds);
+  if (isExpoDirectDeleteModuleAvailable) {
+    return await callDirectDeleteAssets(assetIds);
+  }
+
+  return (await expoMediaLibraryManageMediaModule?.deleteAssetsDirectAsync?.(assetIds)) ?? false;
 }
