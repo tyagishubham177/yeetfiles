@@ -6,6 +6,41 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class ShortPathNative {
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+    public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
+}
+"@
+
+function Get-ShortPathOrOriginal {
+  param([string]$PathValue)
+
+  if ([string]::IsNullOrWhiteSpace($PathValue) -or -not (Test-Path $PathValue)) {
+    return $PathValue
+  }
+
+  $builder = New-Object System.Text.StringBuilder 1024
+  $result = [ShortPathNative]::GetShortPathName($PathValue, $builder, $builder.Capacity)
+  if ($result -gt 0) {
+    return $builder.ToString()
+  }
+
+  return $PathValue
+}
+
+function Remove-IfExists {
+  param([string]$TargetPath)
+
+  if (Test-Path $TargetPath) {
+    Remove-Item -Path $TargetPath -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Add-Candidate {
   param(
     [System.Collections.Generic.List[string]]$List,
@@ -61,12 +96,14 @@ function Test-JavaHome {
   }
 
   try {
-    & $javaExe -version *> $null
+    & cmd.exe /d /c """$javaExe"" -version >nul 2>&1"
     if ($LASTEXITCODE -eq 0) {
       return $true
     }
 
-    $FailureReason.Value = "java.exe exited with code $LASTEXITCODE"
+    $versionOutput = & $javaExe -version 2>&1
+    $summary = (($versionOutput | ForEach-Object { "$_".Trim() }) -join ' ').Trim()
+    $FailureReason.Value = if ($summary) { $summary } else { "java.exe exited with code $LASTEXITCODE" }
     return $false
   } catch {
     $message = $_.Exception.Message
@@ -194,9 +231,10 @@ function Get-JavaCandidates {
 $javaCheckFailures = [System.Collections.Generic.List[string]]::new()
 $javaHome = $null
 
-foreach ($candidate in Get-JavaCandidates) {
+foreach ($candidate in (Get-JavaCandidates)) {
   $failureReason = ''
-  if (Test-JavaHome -PathValue $candidate -FailureReason ([ref]$failureReason)) {
+  $isValidJavaHome = Test-JavaHome -PathValue $candidate -FailureReason ([ref]$failureReason)
+  if ($isValidJavaHome -eq $true) {
     $javaHome = $candidate
     break
   }
@@ -224,8 +262,41 @@ if (-not $javaHome) {
 
 $env:JAVA_HOME = $javaHome
 $env:Path = "$(Join-Path $env:JAVA_HOME 'bin');$env:Path"
+$env:NODE_ENV = 'production'
 
-$androidDir = Join-Path $repoRoot 'android'
+$workingRepoRoot = Get-ShortPathOrOriginal $repoRoot
+$env:GRADLE_USER_HOME = Join-Path $workingRepoRoot '.g'
+
+foreach ($drive in @('Y', 'X')) {
+  try {
+    if (Test-Path "${drive}:\") {
+      & subst.exe "${drive}:" /d | Out-Null
+    }
+  } catch {}
+}
+
+if (-not (Test-Path $env:GRADLE_USER_HOME)) {
+  New-Item -ItemType Directory -Path $env:GRADLE_USER_HOME -Force | Out-Null
+}
+
+$androidDir = Join-Path $workingRepoRoot 'android'
+$nativeIntermediatesToClean = @(
+  (Join-Path $repoRoot '.gradle-user-home'),
+  (Join-Path $repoRoot 'android\.cxx'),
+  (Join-Path $repoRoot 'android\app\.cxx'),
+  (Join-Path $repoRoot 'node_modules\react-native-screens\android\.cxx'),
+  (Join-Path $repoRoot 'node_modules\react-native-reanimated\android\.cxx'),
+  (Join-Path $repoRoot 'node_modules\react-native-worklets\android\.cxx'),
+  (Join-Path $repoRoot 'node_modules\react-native-reanimated\android\build'),
+  (Join-Path $repoRoot 'node_modules\react-native-worklets\android\build')
+)
+
+if ($workingRepoRoot -ne $repoRoot) {
+  foreach ($targetPath in $nativeIntermediatesToClean) {
+    Remove-IfExists $targetPath
+  }
+}
+
 $gradleWrapper = Join-Path $androidDir 'gradlew.bat'
 
 if (-not (Test-Path $gradleWrapper)) {
@@ -233,6 +304,7 @@ if (-not (Test-Path $gradleWrapper)) {
 }
 
 $gradleTask = if ($Variant -eq 'Debug') { ':app:assembleDebug' } else { ':app:assembleRelease' }
+$deviceArchitectures = 'armeabi-v7a,arm64-v8a'
 $apkPath = if ($Variant -eq 'Debug') {
   Join-Path $androidDir 'app\build\outputs\apk\debug\app-debug.apk'
 } else {
@@ -240,11 +312,17 @@ $apkPath = if ($Variant -eq 'Debug') {
 }
 
 Write-Host "Using JAVA_HOME: $env:JAVA_HOME"
+if ($workingRepoRoot -ne $repoRoot) {
+  Write-Host "Using short repo path: $workingRepoRoot"
+}
+Write-Host "Using GRADLE_USER_HOME: $env:GRADLE_USER_HOME"
+Write-Host "Using NODE_ENV: $env:NODE_ENV"
+Write-Host "Using React Native architectures: $deviceArchitectures"
 Write-Host "Running Gradle task: $gradleTask"
 
 Push-Location $androidDir
 try {
-  & $gradleWrapper $gradleTask
+  & $gradleWrapper --no-daemon $gradleTask "-PreactNativeArchitectures=$deviceArchitectures"
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }
