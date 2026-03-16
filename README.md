@@ -55,6 +55,22 @@ Notes:
 - Rebuild with `npm run dev:android:eas` only when native dependencies/config change
 - For JS-only changes, just restart the server and reopen/reload the dev app
 
+## Local APK Build
+
+Use this when you want a local release APK from the Windows machine:
+
+```bash
+npm.cmd run apk:local
+```
+
+If it fails on Java setup, open an Administrator PowerShell once and run:
+
+```powershell
+choco install microsoft-openjdk17 -y
+```
+
+Then close and reopen the terminal and run `npm.cmd run apk:local` again. The build script now checks `JAVA_HOME`, `PATH`, Windows registry entries, Android Studio, and repo-local `.tools` folders before giving up.
+
 ## What YeetFiles is trying to solve
 
 Most cleanup apps feel like chores because they ask the user to think like a file manager. YeetFiles should feel closer to a short game loop:
