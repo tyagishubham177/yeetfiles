@@ -4,6 +4,8 @@ Thumbs.db
 .idea/
 .vscode/
 .expo/
+.g/
+.gradle-user-home/
 expo-env.d.ts
 
 node_modules/
