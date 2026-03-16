@@ -23,11 +23,28 @@ import { radius, shadows, spacing, typography } from '../../src/constants/ui-tok
 import { triggerInteractionFeedback } from '../../src/features/feedback/interaction-feedback';
 import { formatBytes, formatDuration } from '../../src/lib/format';
 import { useAppTheme } from '../../src/lib/theme';
-import { getQuickSessionLabel, selectNewSinceLastScanCount, selectTopUndoEntry, useAppStore } from '../../src/store/app-store';
+import {
+  getQuickSessionLabel,
+  selectNewSinceLastScanCount,
+  selectTopUndoEntry,
+  useAppStore,
+} from '../../src/store/app-store';
 
 type ThemeColors = ReturnType<typeof useAppTheme>['colors'];
 
-function AnimatedCounter({ value, label, delay = 0, colors, isDark }: { value: number; label: string; delay?: number; colors: ThemeColors; isDark: boolean }) {
+function AnimatedCounter({
+  value,
+  label,
+  delay = 0,
+  colors,
+  isDark,
+}: {
+  value: number;
+  label: string;
+  delay?: number;
+  colors: ThemeColors;
+  isDark: boolean;
+}) {
   const animationsEnabled = useAppStore((state) => state.settings.animationsEnabled);
   const scale = useSharedValue(0.9);
   const opacity = useSharedValue(0);
@@ -48,7 +65,13 @@ function AnimatedCounter({ value, label, delay = 0, colors, isDark }: { value: n
   }));
 
   return (
-    <Animated.View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' }, animStyle]}>
+    <Animated.View
+      style={[
+        styles.statCard,
+        { backgroundColor: colors.surface, borderColor: isDark ? colors.outline : 'transparent' },
+        animStyle,
+      ]}
+    >
       <Text style={[styles.statLabel, { color: colors.mutedInk }]}>{label}</Text>
       <Text style={[styles.statValue, { color: colors.ink }]}>{value}</Text>
     </Animated.View>
@@ -86,10 +109,10 @@ export default function SummaryScreen() {
     orbPulse.value = withRepeat(
       withSequence(
         withTiming(1.15, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
-        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) })
+        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
       ),
       -1,
-      true
+      true,
     );
   }, [animationsEnabled, orbPulse]);
 
@@ -108,13 +131,16 @@ export default function SummaryScreen() {
         ? 'You finished a full pass without the loop slowing down.'
         : 'You kept the session moving and stayed in control.';
   const heroLabel = summary.storageFreedBytes > 0 ? 'Storage recovered' : 'Photos organized';
-  const heroValue = summary.storageFreedBytes > 0 ? formatBytes(summary.storageFreedBytes) : `${summary.reviewedCount}`;
+  const heroValue =
+    summary.storageFreedBytes > 0
+      ? formatBytes(summary.storageFreedBytes)
+      : `${summary.reviewedCount}`;
 
   const continueCleaning = () => {
     dismissSummary();
 
     if (currentFileId) {
-      beginQuickSession((summary.targetCount as 10 | 25 | 50 | null) ?? 10, true);
+      beginQuickSession(summary.targetCount, true);
     } else {
       requestRescan({ resetSession: true, source: 'settings' });
     }
@@ -135,7 +161,10 @@ export default function SummaryScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.canvas }]}
+      edges={['top', 'left', 'right']}
+    >
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Background celebration orbs */}
@@ -161,10 +190,16 @@ export default function SummaryScreen() {
             <Text style={styles.celebrationBadgeIcon}>✨</Text>
             <Text style={styles.celebrationBadgeLabel}>Session wrapped</Text>
           </View>
-          <Text style={[styles.eyebrow, { color: colors.progress }]}>{getQuickSessionLabel((summary.targetCount as 10 | 25 | 50 | null) ?? 10)} complete</Text>
-          <Text style={[styles.title, { color: colors.ink }]}>{summary.reviewedCount} decisions{'\n'}made</Text>
+          <Text style={[styles.eyebrow, { color: colors.progress }]}>
+            {getQuickSessionLabel(summary.targetCount)} complete
+          </Text>
+          <Text style={[styles.title, { color: colors.ink }]}>
+            {summary.reviewedCount} decisions{'\n'}made
+          </Text>
           <Text style={[styles.subtitle, { color: colors.mutedInk }]}>{paceCopy}</Text>
-          <Text style={[styles.paceMeta, { color: colors.mutedInk }]}>Time: {formatDuration(summary.durationMs)}</Text>
+          <Text style={[styles.paceMeta, { color: colors.mutedInk }]}>
+            Time: {formatDuration(summary.durationMs)}
+          </Text>
 
           <Animated.View
             entering={animationsEnabled ? FadeInUp.duration(500).delay(400) : undefined}
@@ -172,8 +207,15 @@ export default function SummaryScreen() {
           >
             <View style={styles.heroStatHeader}>
               <Text style={styles.heroStatLabel}>{heroLabel}</Text>
-              <View style={[styles.heroStatBadge, { backgroundColor: isDark ? 'rgba(50,200,136,0.2)' : 'rgba(46,194,126,0.2)' }]}>
-                <Text style={[styles.heroStatBadgeText, { color: isDark ? '#32C888' : '#2EC27E' }]}>↑</Text>
+              <View
+                style={[
+                  styles.heroStatBadge,
+                  { backgroundColor: isDark ? 'rgba(50,200,136,0.2)' : 'rgba(46,194,126,0.2)' },
+                ]}
+              >
+                <Text style={[styles.heroStatBadgeText, { color: isDark ? '#32C888' : '#2EC27E' }]}>
+                  ↑
+                </Text>
               </View>
             </View>
             <Text style={[styles.heroStatValue, { color: colors.white }]}>{heroValue}</Text>
@@ -181,10 +223,34 @@ export default function SummaryScreen() {
         </Animated.View>
 
         <View style={styles.grid}>
-          <AnimatedCounter value={summary.keptCount} label="Kept" delay={200} colors={colors} isDark={isDark} />
-          <AnimatedCounter value={summary.deletedCount} label="Deleted" delay={300} colors={colors} isDark={isDark} />
-          <AnimatedCounter value={summary.movedCount} label="Moved" delay={400} colors={colors} isDark={isDark} />
-          <AnimatedCounter value={summary.skippedCount} label="Skipped" delay={500} colors={colors} isDark={isDark} />
+          <AnimatedCounter
+            value={summary.keptCount}
+            label="Kept"
+            delay={200}
+            colors={colors}
+            isDark={isDark}
+          />
+          <AnimatedCounter
+            value={summary.deletedCount}
+            label="Deleted"
+            delay={300}
+            colors={colors}
+            isDark={isDark}
+          />
+          <AnimatedCounter
+            value={summary.movedCount}
+            label="Moved"
+            delay={400}
+            colors={colors}
+            isDark={isDark}
+          />
+          <AnimatedCounter
+            value={summary.skippedCount}
+            label="Skipped"
+            delay={500}
+            colors={colors}
+            isDark={isDark}
+          />
         </View>
 
         <Animated.View
@@ -193,17 +259,31 @@ export default function SummaryScreen() {
         >
           <Button label="Continue cleaning" onPress={continueCleaning} />
           <Button
-            label={scanState === 'scanning' && scanMode === 'rescan' ? 'Re-scanning photos...' : 'Check for new photos'}
+            label={
+              scanState === 'scanning' && scanMode === 'rescan'
+                ? 'Re-scanning photos...'
+                : 'Check for new photos'
+            }
             onPress={restartGame}
             variant="secondary"
             disabled={scanState === 'scanning' && scanMode === 'rescan'}
           />
-          <Button label="Back to welcome" onPress={() => router.replace(ROUTES.welcome)} variant="ghost" />
+          <Button
+            label="Back to welcome"
+            onPress={() => router.replace(ROUTES.welcome)}
+            variant="ghost"
+          />
         </Animated.View>
 
         <Animated.View
           entering={animationsEnabled ? FadeInUp.duration(500).delay(700) : undefined}
-          style={[styles.rescanCard, { backgroundColor: isDark ? colors.surfaceMuted : '#EEF4FB', borderColor: isDark ? colors.outline : 'transparent' }]}
+          style={[
+            styles.rescanCard,
+            {
+              backgroundColor: isDark ? colors.surfaceMuted : '#EEF4FB',
+              borderColor: isDark ? colors.outline : 'transparent',
+            },
+          ]}
         >
           <View style={styles.rescanHeader}>
             <View style={[styles.rescanDot, { backgroundColor: colors.progress }]} />
@@ -215,7 +295,11 @@ export default function SummaryScreen() {
               : 'Check the library again after you add new photos outside the app.'}
           </Text>
           {lastRescanSummary ? (
-            <Text style={[styles.rescanHint, { color: colors.mutedInk }]}>Last re-scan added {lastRescanSummary.newFileCount} new and kept {lastRescanSummary.protectedReviewedCount} reviewed item{lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} out of the queue.</Text>
+            <Text style={[styles.rescanHint, { color: colors.mutedInk }]}>
+              Last re-scan added {lastRescanSummary.newFileCount} new and kept{' '}
+              {lastRescanSummary.protectedReviewedCount} reviewed item
+              {lastRescanSummary.protectedReviewedCount === 1 ? '' : 's'} out of the queue.
+            </Text>
           ) : null}
         </Animated.View>
 

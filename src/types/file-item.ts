@@ -4,10 +4,18 @@ export type FileStatus = 'pending' | 'kept' | 'deleted' | 'skipped' | 'moved' | 
 export type FolderFilterType = `folder:${string}`;
 export type FilterType = 'all' | BucketType | FolderFilterType;
 export type SortMode = 'oldest_first' | 'newest_first' | 'largest_first' | 'random' | 'smart';
-export type QuickSessionTarget = 10 | 25 | 50;
-export type SessionMode = 'quick10' | 'quick25' | 'quick50' | 'full_queue';
+export type QuickSessionTarget = 10 | 20 | 50;
+export type SessionMode = 'quick10' | 'quick20' | 'quick50' | 'full_queue';
 export type PermissionState = 'unknown' | 'granted' | 'limited' | 'denied' | 'blocked';
-export type ReviewActionSource = 'swipe' | 'dock' | 'modal' | 'secondary' | 'settings' | 'system' | 'tutorial' | 'undo';
+export type ReviewActionSource =
+  | 'swipe'
+  | 'dock'
+  | 'modal'
+  | 'secondary'
+  | 'settings'
+  | 'system'
+  | 'tutorial'
+  | 'undo';
 
 export type FilterChip = {
   id: FilterType;

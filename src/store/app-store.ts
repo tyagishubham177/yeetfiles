@@ -8,7 +8,12 @@ import {
   getRemainingForTarget,
 } from '../features/rewards/session-stats';
 import { isWithinRecentDays, nowIso } from '../lib/time';
-import { APP_STORAGE_KEY, clearStoredAppState, getStoredAppState, setStoredAppState } from '../persistence/storage-adapter';
+import {
+  APP_STORAGE_KEY,
+  clearStoredAppState,
+  getStoredAppState,
+  setStoredAppState,
+} from '../persistence/storage-adapter';
 import type { ActionLog, AnalyticsEvent, ReviewAction } from '../types/action-log';
 import type {
   LowStorageWarning,
@@ -36,7 +41,12 @@ import type {
   SortMode,
 } from '../types/file-item';
 import { getPersistedAppStateSnapshot } from './exportable-state';
-import { appendRecentSessionSummary, pruneHistoryByDay, recordCompletedSession, recordHistoryAction } from './history';
+import {
+  appendRecentSessionSummary,
+  pruneHistoryByDay,
+  recordCompletedSession,
+  recordHistoryAction,
+} from './history';
 
 type ScanProgress = {
   loaded: number;
@@ -53,7 +63,8 @@ type AppStore = PersistedAppState & {
   setHasHydrated: (value: boolean) => void;
   setPermissionState: (value: PermissionState) => void;
   setNotificationPermissionState: (value: NotificationPermissionState) => void;
-  beginQuickSession: (targetCount?: QuickSessionTarget, resetProgress?: boolean) => void;
+  beginQuickSession: (targetCount?: QuickSessionTarget | null, resetProgress?: boolean) => void;
+  terminateSession: () => void;
   setActiveFilter: (value: FilterType) => void;
   setSortMode: (value: SortMode) => void;
   setNightModePreference: (value: NightModePreference) => void;
@@ -67,16 +78,30 @@ type AppStore = PersistedAppState & {
   pruneExpiredUndoEntries: () => void;
   dismissMilestone: () => void;
   commitDeleteSuccess: (fileId: string, bytesDelta: number, source?: ReviewActionSource) => void;
-  recordDeleteFailure: (fileId: string, errorCode: string, message: string, source?: ReviewActionSource) => void;
+  recordDeleteFailure: (
+    fileId: string,
+    errorCode: string,
+    message: string,
+    source?: ReviewActionSource,
+  ) => void;
   recordPreviewOpen: (fileId: string, source?: ReviewActionSource) => void;
-  requestRescan: (options?: { resetSession?: boolean; clearReviewState?: boolean; source?: ReviewActionSource }) => void;
+  requestRescan: (options?: {
+    resetSession?: boolean;
+    clearReviewState?: boolean;
+    source?: ReviewActionSource;
+  }) => void;
   toggleSetting: (key: BooleanSettingKey) => void;
   markGestureTutorialSeen: () => void;
   setStorageWarning: (warning: LowStorageWarning | null) => void;
   recordLowStorageNotificationSent: () => void;
   resetOnboarding: () => void;
   commitMoveSuccess: (fileId: string, target: MoveTarget, source?: ReviewActionSource) => void;
-  recordMoveFailure: (fileId: string, errorCode: string, message: string, source?: ReviewActionSource) => void;
+  recordMoveFailure: (
+    fileId: string,
+    errorCode: string,
+    message: string,
+    source?: ReviewActionSource,
+  ) => void;
   resetApp: () => Promise<void>;
   dismissSummary: () => void;
 };
@@ -141,6 +166,9 @@ const ACTION_LOG_LIMIT = 250;
 const ANALYTICS_EVENT_LIMIT = 80;
 const BASE_FILTER_ORDER: FilterType[] = ['all', 'camera', 'screenshots', 'downloads'];
 const STACK_PREVIEW_COUNT = 3;
+const GOLDEN_RATIO_CONJUGATE = 0.61803398875;
+const RANDOM_BUCKET_MIN = 3;
+const RANDOM_BUCKET_MAX = 7;
 let cachedFilterChipQueueOrder: string[] | null = null;
 let cachedFilterChipFilesById: Record<string, FileItem> | null = null;
 let cachedFilterChips: FilterChip[] = [];
@@ -181,9 +209,36 @@ function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function getSessionModeForTarget(targetCount: QuickSessionTarget): SessionMode {
-  if (targetCount === 25) {
-    return 'quick25';
+function normalizeSessionTargetCount(
+  value: number | null | undefined,
+  sessionMode?: SessionMode,
+): QuickSessionTarget | null {
+  if (value === null || sessionMode === 'full_queue') {
+    return null;
+  }
+
+  if (value === 10) {
+    return 10;
+  }
+
+  if (value === 20 || value === 25) {
+    return 20;
+  }
+
+  if (value === 50) {
+    return 50;
+  }
+
+  return 10;
+}
+
+function getSessionModeForTarget(targetCount: QuickSessionTarget | null): SessionMode {
+  if (targetCount === null) {
+    return 'full_queue';
+  }
+
+  if (targetCount === 20) {
+    return 'quick20';
   }
 
   if (targetCount === 50) {
@@ -229,7 +284,9 @@ function slugifyFolderKey(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function getFolderFilterId(file: Pick<FileItem, 'albumId' | 'albumTitle'>): FolderFilterType | null {
+function getFolderFilterId(
+  file: Pick<FileItem, 'albumId' | 'albumTitle'>,
+): FolderFilterType | null {
   if (file.albumId) {
     return `folder:${file.albumId}`;
   }
@@ -262,7 +319,11 @@ function matchesFilter(file: FileItem, activeFilter: FilterType): boolean {
   return file.bucketType === activeFilter;
 }
 
-function resolveRestorableFilter(queueOrder: string[], filesById: Record<string, FileItem>, activeFilter: FilterType): FilterType {
+function resolveRestorableFilter(
+  queueOrder: string[],
+  filesById: Record<string, FileItem>,
+  activeFilter: FilterType,
+): FilterType {
   if (!isFolderFilter(activeFilter)) {
     return activeFilter;
   }
@@ -320,7 +381,12 @@ function getSmartSortScore(file: FileItem): number {
   return score;
 }
 
-function compareFiles(left: FileItem, right: FileItem, sortMode: SortMode, queueIndex: Map<string, number>): number {
+function compareFiles(
+  left: FileItem,
+  right: FileItem,
+  sortMode: SortMode,
+  queueIndex: Map<string, number>,
+): number {
   if (sortMode === 'largest_first') {
     const sizeDelta = right.sizeBytes - left.sizeBytes;
     if (sizeDelta !== 0) {
@@ -375,13 +441,63 @@ function shuffleIds(ids: string[]): string[] {
   return shuffled;
 }
 
-function reconcileRandomQueueOrder(queueOrder: string[], filesById: Record<string, FileItem>, randomQueueOrder: string[]): string[] {
+function buildBucketVisitOrder(bucketCount: number): number[] {
+  const offset = Math.random();
+
+  return Array.from({ length: bucketCount }, (_, bucketIndex) => ({
+    bucketIndex,
+    score: (offset + bucketIndex * GOLDEN_RATIO_CONJUGATE) % 1,
+  }))
+    .sort((left, right) => left.score - right.score)
+    .map(({ bucketIndex }) => bucketIndex);
+}
+
+function buildSpacedRandomOrder(ids: string[]): string[] {
+  if (ids.length <= RANDOM_BUCKET_MIN) {
+    return shuffleIds(ids);
+  }
+
+  const bucketCount = Math.min(
+    ids.length,
+    Math.max(RANDOM_BUCKET_MIN, Math.min(RANDOM_BUCKET_MAX, Math.round(Math.sqrt(ids.length)))),
+  );
+  const bucketSize = Math.ceil(ids.length / bucketCount);
+  const buckets = Array.from({ length: bucketCount }, (_, bucketIndex) =>
+    shuffleIds(ids.slice(bucketIndex * bucketSize, (bucketIndex + 1) * bucketSize)),
+  ).filter((bucket) => bucket.length > 0);
+  const visitOrder = buildBucketVisitOrder(buckets.length);
+  const spacedOrder: string[] = [];
+  let appendedAny = true;
+
+  while (appendedAny) {
+    appendedAny = false;
+
+    for (const bucketIndex of visitOrder) {
+      const nextId = buckets[bucketIndex]?.shift();
+      if (!nextId) {
+        continue;
+      }
+
+      spacedOrder.push(nextId);
+      appendedAny = true;
+    }
+  }
+
+  return spacedOrder;
+}
+
+function reconcileRandomQueueOrder(
+  queueOrder: string[],
+  filesById: Record<string, FileItem>,
+  randomQueueOrder: string[],
+): string[] {
   const existingQueueIds = queueOrder.filter((fileId) => Boolean(filesById[fileId]));
   if (existingQueueIds.length === 0) {
     return [];
   }
 
-  const baseOrder = randomQueueOrder.length > 0 ? randomQueueOrder : shuffleIds(existingQueueIds);
+  const baseOrder =
+    randomQueueOrder.length > 0 ? randomQueueOrder : buildSpacedRandomOrder(existingQueueIds);
   const seen = new Set<string>();
   const reconciled = baseOrder.filter((fileId) => {
     if (!filesById[fileId] || seen.has(fileId)) {
@@ -393,7 +509,9 @@ function reconcileRandomQueueOrder(queueOrder: string[], filesById: Record<strin
   });
   const missingIds = existingQueueIds.filter((fileId) => !seen.has(fileId));
 
-  return missingIds.length > 0 ? [...reconciled, ...shuffleIds(missingIds)] : reconciled;
+  return missingIds.length > 0
+    ? [...reconciled, ...buildSpacedRandomOrder(missingIds)]
+    : reconciled;
 }
 
 function moveFileIdToRandomTail(randomQueueOrder: string[], fileId: string): string[] {
@@ -405,7 +523,10 @@ function moveFileIdToRandomTail(randomQueueOrder: string[], fileId: string): str
 }
 
 function getVisibleQueueIds(
-  state: Pick<PersistedAppState, 'queueOrder' | 'randomQueueOrder' | 'filesById' | 'activeFilter' | 'sortMode' | 'currentFileId'>
+  state: Pick<
+    PersistedAppState,
+    'queueOrder' | 'randomQueueOrder' | 'filesById' | 'activeFilter' | 'sortMode' | 'currentFileId'
+  >,
 ): string[] {
   if (
     cachedVisibleQueueOrder === state.queueOrder &&
@@ -421,15 +542,24 @@ function getVisibleQueueIds(
   const queueIndex = new Map(state.queueOrder.map((fileId, index) => [fileId, index]));
   const actionableFiles = state.queueOrder
     .map((fileId) => state.filesById[fileId])
-    .filter((file): file is FileItem => Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter));
+    .filter(
+      (file): file is FileItem =>
+        Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter),
+    );
 
   let visibleQueueIds: string[];
 
   if (state.sortMode === 'random') {
-    const stableRandomOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
+    const stableRandomOrder = reconcileRandomQueueOrder(
+      state.queueOrder,
+      state.filesById,
+      state.randomQueueOrder,
+    );
     const matchingIds = stableRandomOrder.filter((fileId) => {
       const file = state.filesById[fileId];
-      return Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter);
+      return (
+        Boolean(file) && isActionableStatus(file.status) && matchesFilter(file, state.activeFilter)
+      );
     });
     const anchoredCurrentFile = state.currentFileId ? state.filesById[state.currentFileId] : null;
 
@@ -440,12 +570,17 @@ function getVisibleQueueIds(
       isActionableStatus(anchoredCurrentFile.status) &&
       matchesFilter(anchoredCurrentFile, state.activeFilter)
     ) {
-      visibleQueueIds = [state.currentFileId, ...matchingIds.filter((fileId) => fileId !== state.currentFileId)];
+      visibleQueueIds = [
+        state.currentFileId,
+        ...matchingIds.filter((fileId) => fileId !== state.currentFileId),
+      ];
     } else {
       visibleQueueIds = matchingIds;
     }
   } else {
-    visibleQueueIds = actionableFiles.sort((left, right) => compareFiles(left, right, state.sortMode, queueIndex)).map((file) => file.id);
+    visibleQueueIds = actionableFiles
+      .sort((left, right) => compareFiles(left, right, state.sortMode, queueIndex))
+      .map((file) => file.id);
   }
 
   cachedVisibleQueueOrder = state.queueOrder;
@@ -464,9 +599,16 @@ function resolveCurrentFileId(
   randomQueueOrder: string[],
   filesById: Record<string, FileItem>,
   activeFilter: FilterType,
-  sortMode: SortMode
+  sortMode: SortMode,
 ): string | null {
-  const visibleIds = getVisibleQueueIds({ queueOrder, randomQueueOrder, filesById, activeFilter, sortMode, currentFileId: null });
+  const visibleIds = getVisibleQueueIds({
+    queueOrder,
+    randomQueueOrder,
+    filesById,
+    activeFilter,
+    sortMode,
+    currentFileId: null,
+  });
   return visibleIds[0] ?? null;
 }
 
@@ -476,11 +618,15 @@ function resolveCurrentFileIdOrFallback(
   filesById: Record<string, FileItem>,
   activeFilter: FilterType,
   sortMode: SortMode,
-  currentFileId: string | null
+  currentFileId: string | null,
 ): string | null {
   if (currentFileId) {
     const currentFile = filesById[currentFileId];
-    if (currentFile && isActionableStatus(currentFile.status) && matchesFilter(currentFile, activeFilter)) {
+    if (
+      currentFile &&
+      isActionableStatus(currentFile.status) &&
+      matchesFilter(currentFile, activeFilter)
+    ) {
       return currentFileId;
     }
   }
@@ -497,7 +643,7 @@ function appendActionLog(
   source: ReviewActionSource,
   bytesDelta: number = 0,
   errorCode?: string,
-  errorMessage?: string
+  errorMessage?: string,
 ): ActionLog[] {
   return [
     {
@@ -518,7 +664,11 @@ function appendActionLog(
     .slice(0, ACTION_LOG_LIMIT);
 }
 
-function appendAnalyticsEvent(events: AnalyticsEvent[], name: AnalyticsEvent['name'], sessionId: string): AnalyticsEvent[] {
+function appendAnalyticsEvent(
+  events: AnalyticsEvent[],
+  name: AnalyticsEvent['name'],
+  sessionId: string,
+): AnalyticsEvent[] {
   return [
     {
       id: createId('analytics'),
@@ -540,20 +690,30 @@ function appendActionLogIfEnabled(
   source: ReviewActionSource,
   bytesDelta: number = 0,
   errorCode?: string,
-  errorMessage?: string
+  errorMessage?: string,
 ): ActionLog[] {
   if (!state.settings.debugLoggingEnabled) {
     return state.actionLogs;
   }
 
-  return appendActionLog(state.actionLogs, action, fileId, state.sessionId, result, source, bytesDelta, errorCode, errorMessage);
+  return appendActionLog(
+    state.actionLogs,
+    action,
+    fileId,
+    state.sessionId,
+    result,
+    source,
+    bytesDelta,
+    errorCode,
+    errorMessage,
+  );
 }
 
 function appendAnalyticsEventIfEnabled(
   state: PersistedAppState,
   events: AnalyticsEvent[],
   name: AnalyticsEvent['name'],
-  sessionId: string
+  sessionId: string,
 ): AnalyticsEvent[] {
   if (!state.settings.debugLoggingEnabled) {
     return events;
@@ -563,12 +723,13 @@ function appendAnalyticsEventIfEnabled(
 }
 
 function maybeCaptureSummary(state: PersistedAppState, stats: SessionStats) {
-  if (!state.sessionId) {
+  const normalizedTargetCount = normalizeSessionTargetCount(state.targetCount, state.sessionMode);
+  if (!state.sessionId || normalizedTargetCount === null) {
     return null;
   }
 
-  return getRemainingForTarget(stats, state.targetCount) === 0
-    ? buildSessionSummary(state.sessionId, stats, state.targetCount as QuickSessionTarget | null)
+  return getRemainingForTarget(stats, normalizedTargetCount) === 0
+    ? buildSessionSummary(state.sessionId, stats, normalizedTargetCount)
     : null;
 }
 
@@ -578,15 +739,21 @@ function buildReviewProgressArtifacts(
   fileId: string,
   sessionStats: SessionStats,
   source: ReviewActionSource,
-  bytesDelta: number = 0
+  bytesDelta: number = 0,
 ) {
   const milestone = buildMilestoneEvent(sessionStats.reviewedCount);
   const analyticsEvents = state.sessionId
     ? [
         ...(state.sessionStats.reviewedCount === 0
-          ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(Boolean)
+          ? [appendAnalyticsEventIfEnabled(state, [], 'first_swipe', state.sessionId)[0]].filter(
+              Boolean,
+            )
           : []),
-        ...(milestone ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(Boolean) : []),
+        ...(milestone
+          ? [appendAnalyticsEventIfEnabled(state, [], 'milestone_hit', state.sessionId)[0]].filter(
+              Boolean,
+            )
+          : []),
         ...state.analyticsEvents,
       ].slice(0, ANALYTICS_EVENT_LIMIT)
     : state.analyticsEvents;
@@ -597,8 +764,12 @@ function buildReviewProgressArtifacts(
     milestone,
     analyticsEvents,
     sessionSummary,
-    historyByDay: sessionSummary ? recordCompletedSession(historyAfterAction, sessionSummary) : historyAfterAction,
-    recentSessionSummaries: sessionSummary ? appendRecentSessionSummary(state.recentSessionSummaries, sessionSummary) : state.recentSessionSummaries,
+    historyByDay: sessionSummary
+      ? recordCompletedSession(historyAfterAction, sessionSummary)
+      : historyAfterAction,
+    recentSessionSummaries: sessionSummary
+      ? appendRecentSessionSummary(state.recentSessionSummaries, sessionSummary)
+      : state.recentSessionSummaries,
     actionLogs: appendActionLogIfEnabled(state, action, fileId, 'success', source, bytesDelta),
   };
 }
@@ -641,7 +812,7 @@ function isUndoEntryActive(entry: UndoEntry): boolean {
 function createUndoEntry(
   action: UndoEntry['action'],
   active: FileItem,
-  state: PersistedAppState
+  state: PersistedAppState,
 ): UndoEntry {
   const now = Date.now();
 
@@ -707,13 +878,24 @@ export const useAppStore = create<AppStore>()(
       setNotificationPermissionState: (value) => set({ notificationPermissionState: value }),
       beginQuickSession: (targetCount = 10, resetProgress = true) =>
         set((state) => {
-          const resolvedTarget = resetProgress ? targetCount : ((state.targetCount as QuickSessionTarget | null) ?? targetCount);
-          const sessionId = resetProgress || !state.sessionId ? createId('session') : state.sessionId;
+          const resolvedTarget = resetProgress
+            ? targetCount
+            : normalizeSessionTargetCount(state.targetCount, state.sessionMode);
+          const sessionId =
+            resetProgress || !state.sessionId ? createId('session') : state.sessionId;
           const sessionStats = resetProgress ? createEmptySessionStats() : state.sessionStats;
-          const nextRandomQueueOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
+          const queueIds = state.queueOrder.filter((fileId) => Boolean(state.filesById[fileId]));
+          const nextRandomQueueOrder = resetProgress
+            ? buildSpacedRandomOrder(queueIds)
+            : reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
           const analyticsEvents =
             sessionId && (resetProgress || !state.sessionId)
-              ? appendAnalyticsEventIfEnabled(state, state.analyticsEvents, 'session_start', sessionId)
+              ? appendAnalyticsEventIfEnabled(
+                  state,
+                  state.analyticsEvents,
+                  'session_start',
+                  sessionId,
+                )
               : state.analyticsEvents;
 
           return {
@@ -726,27 +908,72 @@ export const useAppStore = create<AppStore>()(
             undoEntries: resetProgress ? [] : pruneExpiredUndoEntries(state.undoEntries),
             analyticsEvents,
             randomQueueOrder: nextRandomQueueOrder,
-            currentFileId: resolveCurrentFileId(state.queueOrder, nextRandomQueueOrder, state.filesById, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(
+              state.queueOrder,
+              nextRandomQueueOrder,
+              state.filesById,
+              state.activeFilter,
+              state.sortMode,
+            ),
             settings: {
               ...state.settings,
               hasCompletedOnboarding: true,
             },
           };
         }),
+      terminateSession: () =>
+        set((state) => {
+          if (!state.sessionId || state.sessionStats.reviewedCount === 0) {
+            return {};
+          }
+
+          const sessionSummary = buildSessionSummary(
+            state.sessionId,
+            state.sessionStats,
+            normalizeSessionTargetCount(state.targetCount, state.sessionMode),
+          );
+
+          return {
+            sessionSummary,
+            activeMilestone: null,
+            undoEntries: pruneExpiredUndoEntries(state.undoEntries),
+            historyByDay: recordCompletedSession(state.historyByDay, sessionSummary),
+            recentSessionSummaries: appendRecentSessionSummary(
+              state.recentSessionSummaries,
+              sessionSummary,
+            ),
+          };
+        }),
       setActiveFilter: (value) =>
         set((state) => ({
           activeFilter: value,
-          currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, state.filesById, value, state.sortMode),
+          currentFileId: resolveCurrentFileId(
+            state.queueOrder,
+            state.randomQueueOrder,
+            state.filesById,
+            value,
+            state.sortMode,
+          ),
         })),
       setSortMode: (value) =>
         set((state) => {
           const nextSortMode = normalizeSortMode(value);
-          const nextRandomQueueOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
+          const nextRandomQueueOrder = reconcileRandomQueueOrder(
+            state.queueOrder,
+            state.filesById,
+            state.randomQueueOrder,
+          );
 
           return {
             sortMode: nextSortMode,
             randomQueueOrder: nextRandomQueueOrder,
-            currentFileId: resolveCurrentFileId(state.queueOrder, nextRandomQueueOrder, state.filesById, state.activeFilter, nextSortMode),
+            currentFileId: resolveCurrentFileId(
+              state.queueOrder,
+              nextRandomQueueOrder,
+              state.filesById,
+              state.activeFilter,
+              nextSortMode,
+            ),
           };
         }),
       setNightModePreference: (value) =>
@@ -768,7 +995,7 @@ export const useAppStore = create<AppStore>()(
                       ...file,
                       isNewSinceLastScan: false,
                     },
-                  ])
+                  ]),
                 )
               : state.filesById;
 
@@ -801,7 +1028,9 @@ export const useAppStore = create<AppStore>()(
           }
 
           for (const item of items) {
-            const existingFileId = existingByAssetId.get(item.nativeAssetId) ?? existingByFingerprint.get(item.scanFingerprint);
+            const existingFileId =
+              existingByAssetId.get(item.nativeAssetId) ??
+              existingByFingerprint.get(item.scanFingerprint);
 
             if (existingFileId) {
               const existing = nextFiles[existingFileId];
@@ -835,26 +1064,47 @@ export const useAppStore = create<AppStore>()(
             newFileCount += 1;
           }
 
-          const nextRandomQueueOrder = reconcileRandomQueueOrder(nextQueueOrder, nextFiles, state.randomQueueOrder);
+          const nextRandomQueueOrder = reconcileRandomQueueOrder(
+            nextQueueOrder,
+            nextFiles,
+            state.randomQueueOrder,
+          );
 
           return {
             filesById: nextFiles,
             queueOrder: nextQueueOrder,
             randomQueueOrder: nextRandomQueueOrder,
-            currentFileId: state.currentFileId ?? resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId:
+              state.currentFileId ??
+              resolveCurrentFileId(
+                nextQueueOrder,
+                nextRandomQueueOrder,
+                nextFiles,
+                state.activeFilter,
+                state.sortMode,
+              ),
             scanState: 'scanning' as const,
             scanProgressLoaded: progress.loaded,
             scanProgressTotal: progress.total,
             currentScanNewFileCount: state.currentScanNewFileCount + newFileCount,
             currentScanMatchedFileCount: state.currentScanMatchedFileCount + matchedFileCount,
-            currentScanProtectedReviewedCount: state.currentScanProtectedReviewedCount + protectedReviewedCount,
+            currentScanProtectedReviewedCount:
+              state.currentScanProtectedReviewedCount + protectedReviewedCount,
           };
         }),
       completeScan: () =>
         set((state) => {
           const completedAt = nowIso();
-          const activeFilter = resolveRestorableFilter(state.queueOrder, state.filesById, state.activeFilter);
-          const randomQueueOrder = reconcileRandomQueueOrder(state.queueOrder, state.filesById, state.randomQueueOrder);
+          const activeFilter = resolveRestorableFilter(
+            state.queueOrder,
+            state.filesById,
+            state.activeFilter,
+          );
+          const randomQueueOrder = reconcileRandomQueueOrder(
+            state.queueOrder,
+            state.filesById,
+            state.randomQueueOrder,
+          );
 
           return {
             activeFilter,
@@ -863,7 +1113,14 @@ export const useAppStore = create<AppStore>()(
             lastCompletedScanAt: completedAt,
             lastRescanSummary: buildRescanSummary(state, completedAt) ?? state.lastRescanSummary,
             randomQueueOrder,
-            currentFileId: resolveCurrentFileIdOrFallback(state.queueOrder, randomQueueOrder, state.filesById, activeFilter, state.sortMode, state.currentFileId),
+            currentFileId: resolveCurrentFileIdOrFallback(
+              state.queueOrder,
+              randomQueueOrder,
+              state.filesById,
+              activeFilter,
+              state.sortMode,
+              state.currentFileId,
+            ),
           };
         }),
       failScan: (message) =>
@@ -894,11 +1151,23 @@ export const useAppStore = create<AppStore>()(
             [active.id]: updatedFile,
           };
           const sessionStats = applySuccessfulAction(state.sessionStats, 'keep');
-          const artifacts = buildReviewProgressArtifacts(state, 'keep', active.id, sessionStats, source);
+          const artifacts = buildReviewProgressArtifacts(
+            state,
+            'keep',
+            active.id,
+            sessionStats,
+            source,
+          );
 
           return {
             filesById: nextFiles,
-            currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(
+              state.queueOrder,
+              state.randomQueueOrder,
+              nextFiles,
+              state.activeFilter,
+              state.sortMode,
+            ),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -930,16 +1199,34 @@ export const useAppStore = create<AppStore>()(
             ...state.filesById,
             [active.id]: updatedFile,
           };
-          const nextQueueOrder = [...state.queueOrder.filter((fileId) => fileId !== active.id), active.id];
-          const nextRandomQueueOrder = moveFileIdToRandomTail(reconcileRandomQueueOrder(nextQueueOrder, nextFiles, state.randomQueueOrder), active.id);
+          const nextQueueOrder = [
+            ...state.queueOrder.filter((fileId) => fileId !== active.id),
+            active.id,
+          ];
+          const nextRandomQueueOrder = moveFileIdToRandomTail(
+            reconcileRandomQueueOrder(nextQueueOrder, nextFiles, state.randomQueueOrder),
+            active.id,
+          );
           const sessionStats = applySuccessfulAction(state.sessionStats, 'skip');
-          const artifacts = buildReviewProgressArtifacts(state, 'skip', active.id, sessionStats, source);
+          const artifacts = buildReviewProgressArtifacts(
+            state,
+            'skip',
+            active.id,
+            sessionStats,
+            source,
+          );
 
           return {
             filesById: nextFiles,
             queueOrder: nextQueueOrder,
             randomQueueOrder: nextRandomQueueOrder,
-            currentFileId: resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(
+              nextQueueOrder,
+              nextRandomQueueOrder,
+              nextFiles,
+              state.activeFilter,
+              state.sortMode,
+            ),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -978,18 +1265,36 @@ export const useAppStore = create<AppStore>()(
             [undoEntry.fileId]: restoredFile,
           };
           const nextQueueOrder = [...undoEntry.previousQueueOrder];
-          const nextRandomQueueOrder = reconcileRandomQueueOrder(nextQueueOrder, nextFiles, undoEntry.previousRandomQueueOrder);
+          const nextRandomQueueOrder = reconcileRandomQueueOrder(
+            nextQueueOrder,
+            nextFiles,
+            undoEntry.previousRandomQueueOrder,
+          );
 
           return {
             filesById: nextFiles,
             queueOrder: nextQueueOrder,
             randomQueueOrder: nextRandomQueueOrder,
-            currentFileId: resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(
+              nextQueueOrder,
+              nextRandomQueueOrder,
+              nextFiles,
+              state.activeFilter,
+              state.sortMode,
+            ),
             sessionStats: undoEntry.previousSessionStats,
             sessionSummary: undoEntry.previousSessionSummary,
             activeMilestone: undoEntry.previousActiveMilestone,
-            undoEntries: state.undoEntries.filter((entry) => entry.id !== undoEntry.id && isUndoEntryActive(entry)),
-            actionLogs: appendActionLogIfEnabled(state, 'undo', undoEntry.fileId, 'success', source),
+            undoEntries: state.undoEntries.filter(
+              (entry) => entry.id !== undoEntry.id && isUndoEntryActive(entry),
+            ),
+            actionLogs: appendActionLogIfEnabled(
+              state,
+              'undo',
+              undoEntry.fileId,
+              'success',
+              source,
+            ),
           };
         }),
       pruneExpiredUndoEntries: () =>
@@ -1019,11 +1324,24 @@ export const useAppStore = create<AppStore>()(
             [fileId]: updatedFile,
           };
           const sessionStats = applySuccessfulAction(state.sessionStats, 'delete', bytesDelta);
-          const artifacts = buildReviewProgressArtifacts(state, 'delete', fileId, sessionStats, source, bytesDelta);
+          const artifacts = buildReviewProgressArtifacts(
+            state,
+            'delete',
+            fileId,
+            sessionStats,
+            source,
+            bytesDelta,
+          );
 
           return {
             filesById: nextFiles,
-            currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(
+              state.queueOrder,
+              state.randomQueueOrder,
+              nextFiles,
+              state.activeFilter,
+              state.sortMode,
+            ),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -1054,11 +1372,23 @@ export const useAppStore = create<AppStore>()(
             [fileId]: updatedFile,
           };
           const sessionStats = applySuccessfulAction(state.sessionStats, 'move');
-          const artifacts = buildReviewProgressArtifacts(state, 'move', fileId, sessionStats, source);
+          const artifacts = buildReviewProgressArtifacts(
+            state,
+            'move',
+            fileId,
+            sessionStats,
+            source,
+          );
 
           return {
             filesById: nextFiles,
-            currentFileId: resolveCurrentFileId(state.queueOrder, state.randomQueueOrder, nextFiles, state.activeFilter, state.sortMode),
+            currentFileId: resolveCurrentFileId(
+              state.queueOrder,
+              state.randomQueueOrder,
+              nextFiles,
+              state.activeFilter,
+              state.sortMode,
+            ),
             sessionStats,
             sessionSummary: artifacts.sessionSummary,
             activeMilestone: artifacts.milestone ?? state.activeMilestone,
@@ -1086,7 +1416,16 @@ export const useAppStore = create<AppStore>()(
               ...state.filesById,
               [fileId]: updatedFile,
             },
-            actionLogs: appendActionLogIfEnabled(state, 'move', fileId, 'failed', source, 0, errorCode, message),
+            actionLogs: appendActionLogIfEnabled(
+              state,
+              'move',
+              fileId,
+              'failed',
+              source,
+              0,
+              errorCode,
+              message,
+            ),
           };
         }),
       recordDeleteFailure: (fileId, errorCode, message, source = 'system') =>
@@ -1106,23 +1445,45 @@ export const useAppStore = create<AppStore>()(
               ...state.filesById,
               [fileId]: updatedFile,
             },
-            actionLogs: appendActionLogIfEnabled(state, 'delete', fileId, 'failed', source, 0, errorCode, message),
+            actionLogs: appendActionLogIfEnabled(
+              state,
+              'delete',
+              fileId,
+              'failed',
+              source,
+              0,
+              errorCode,
+              message,
+            ),
           };
         }),
       recordPreviewOpen: (fileId, source = 'modal') =>
         set((state) => ({
           actionLogs: appendActionLogIfEnabled(state, 'open', fileId, 'success', source),
         })),
-      requestRescan: ({ resetSession = false, clearReviewState = false, source = 'settings' } = {}) =>
+      requestRescan: ({
+        resetSession = false,
+        clearReviewState = false,
+        source = 'settings',
+      } = {}) =>
         set((state) => {
           const nextFilesById = clearReviewState ? {} : state.filesById;
           const nextQueueOrder = clearReviewState ? [] : state.queueOrder;
-          const nextRandomQueueOrder = clearReviewState ? [] : reconcileRandomQueueOrder(nextQueueOrder, nextFilesById, state.randomQueueOrder);
+          const nextRandomQueueOrder = clearReviewState
+            ? []
+            : reconcileRandomQueueOrder(nextQueueOrder, nextFilesById, state.randomQueueOrder);
 
           return {
             currentFileId: clearReviewState
               ? null
-              : state.currentFileId ?? resolveCurrentFileId(nextQueueOrder, nextRandomQueueOrder, nextFilesById, state.activeFilter, state.sortMode),
+              : (state.currentFileId ??
+                resolveCurrentFileId(
+                  nextQueueOrder,
+                  nextRandomQueueOrder,
+                  nextFilesById,
+                  state.activeFilter,
+                  state.sortMode,
+                )),
             filesById: nextFilesById,
             queueOrder: nextQueueOrder,
             randomQueueOrder: nextRandomQueueOrder,
@@ -1138,7 +1499,8 @@ export const useAppStore = create<AppStore>()(
             sessionSummary: resetSession || clearReviewState ? null : state.sessionSummary,
             sessionStats: resetSession ? createEmptySessionStats() : state.sessionStats,
             sessionId: resetSession ? createId('session') : state.sessionId,
-            undoEntries: resetSession || clearReviewState ? [] : pruneExpiredUndoEntries(state.undoEntries),
+            undoEntries:
+              resetSession || clearReviewState ? [] : pruneExpiredUndoEntries(state.undoEntries),
             activeMilestone: resetSession ? null : state.activeMilestone,
             activeFilter: resetSession || clearReviewState ? 'all' : state.activeFilter,
             lastCleanRebuildAt: clearReviewState ? nowIso() : state.lastCleanRebuildAt,
@@ -1148,7 +1510,7 @@ export const useAppStore = create<AppStore>()(
               'rescan',
               clearReviewState ? 'clean-rebuild' : 'incremental-rescan',
               'success',
-              source
+              source,
             ),
           };
         }),
@@ -1162,7 +1524,8 @@ export const useAppStore = create<AppStore>()(
               [key]: nextValue,
             },
             actionLogs: key === 'debugLoggingEnabled' && !nextValue ? [] : state.actionLogs,
-            analyticsEvents: key === 'debugLoggingEnabled' && !nextValue ? [] : state.analyticsEvents,
+            analyticsEvents:
+              key === 'debugLoggingEnabled' && !nextValue ? [] : state.analyticsEvents,
           };
         }),
       markGestureTutorialSeen: () =>
@@ -1217,24 +1580,54 @@ export const useAppStore = create<AppStore>()(
           ...(typedPersisted?.settings ?? {}),
         };
         const analyticsEvents = settings.debugLoggingEnabled
-          ? (typedPersisted?.analyticsEvents ?? currentState.analyticsEvents).filter((entry) => isWithinRecentDays(entry.timestamp, 90)).slice(0, ANALYTICS_EVENT_LIMIT)
+          ? (typedPersisted?.analyticsEvents ?? currentState.analyticsEvents)
+              .filter((entry) => isWithinRecentDays(entry.timestamp, 90))
+              .slice(0, ANALYTICS_EVENT_LIMIT)
           : [];
         const actionLogs = settings.debugLoggingEnabled
-          ? (typedPersisted?.actionLogs ?? currentState.actionLogs).filter((entry) => isWithinRecentDays(entry.timestamp, 90)).slice(0, ACTION_LOG_LIMIT)
+          ? (typedPersisted?.actionLogs ?? currentState.actionLogs)
+              .filter((entry) => isWithinRecentDays(entry.timestamp, 90))
+              .slice(0, ACTION_LOG_LIMIT)
           : [];
+        const persistedSessionMode = typedPersisted?.sessionMode ?? currentState.sessionMode;
+        const targetCount = normalizeSessionTargetCount(
+          typedPersisted?.targetCount ?? currentState.targetCount,
+          persistedSessionMode,
+        );
         const filesById = typedPersisted?.filesById ?? currentState.filesById;
-        const queueOrder = (typedPersisted?.queueOrder ?? currentState.queueOrder).filter((fileId) => Boolean(filesById[fileId]));
-        const randomQueueOrder = reconcileRandomQueueOrder(queueOrder, filesById, typedPersisted?.randomQueueOrder ?? currentState.randomQueueOrder);
+        const queueOrder = (typedPersisted?.queueOrder ?? currentState.queueOrder).filter(
+          (fileId) => Boolean(filesById[fileId]),
+        );
+        const randomQueueOrder = reconcileRandomQueueOrder(
+          queueOrder,
+          filesById,
+          typedPersisted?.randomQueueOrder ?? currentState.randomQueueOrder,
+        );
         const sortMode = normalizeSortMode(typedPersisted?.sortMode ?? currentState.sortMode);
-        const activeFilter = resolveRestorableFilter(queueOrder, filesById, typedPersisted?.activeFilter ?? currentState.activeFilter);
-        const recentSessionSummaries = (typedPersisted?.recentSessionSummaries ?? currentState.recentSessionSummaries)
+        const activeFilter = resolveRestorableFilter(
+          queueOrder,
+          filesById,
+          typedPersisted?.activeFilter ?? currentState.activeFilter,
+        );
+        const recentSessionSummaries = (
+          typedPersisted?.recentSessionSummaries ?? currentState.recentSessionSummaries
+        )
           .filter((entry) => isWithinRecentDays(entry.completedAt, 90))
           .slice(0, 12);
-        const currentFileId = resolveCurrentFileIdOrFallback(queueOrder, randomQueueOrder, filesById, activeFilter, sortMode, typedPersisted?.currentFileId ?? null);
+        const currentFileId = resolveCurrentFileIdOrFallback(
+          queueOrder,
+          randomQueueOrder,
+          filesById,
+          activeFilter,
+          sortMode,
+          typedPersisted?.currentFileId ?? null,
+        );
 
         return {
           ...currentState,
           ...typedPersisted,
+          sessionMode: getSessionModeForTarget(targetCount),
+          targetCount,
           filesById,
           queueOrder,
           randomQueueOrder,
@@ -1243,7 +1636,9 @@ export const useAppStore = create<AppStore>()(
           activeFilter,
           actionLogs,
           analyticsEvents,
-          historyByDay: pruneHistoryByDay(typedPersisted?.historyByDay ?? currentState.historyByDay),
+          historyByDay: pruneHistoryByDay(
+            typedPersisted?.historyByDay ?? currentState.historyByDay,
+          ),
           recentSessionSummaries,
           scanState: typedPersisted?.scanState === 'error' ? 'error' : 'idle',
           scanProgressLoaded: 0,
@@ -1252,7 +1647,9 @@ export const useAppStore = create<AppStore>()(
           currentScanMatchedFileCount: 0,
           currentScanProtectedReviewedCount: 0,
           activeScanStartedAt: null,
-          lastLowStorageNotificationAt: typedPersisted?.lastLowStorageNotificationAt ?? currentState.lastLowStorageNotificationAt,
+          lastLowStorageNotificationAt:
+            typedPersisted?.lastLowStorageNotificationAt ??
+            currentState.lastLowStorageNotificationAt,
           settings,
         };
       },
@@ -1261,8 +1658,8 @@ export const useAppStore = create<AppStore>()(
         resetSelectorCaches();
         state?.setHasHydrated(true);
       },
-    }
-  )
+    },
+  ),
 );
 
 export function selectVisibleQueueIds(state: AppStore): string[] {
@@ -1270,14 +1667,17 @@ export function selectVisibleQueueIds(state: AppStore): string[] {
 }
 
 export function selectCurrentFile(state: AppStore): FileItem | null {
-  return state.currentFileId ? state.filesById[state.currentFileId] ?? null : null;
+  return state.currentFileId ? (state.filesById[state.currentFileId] ?? null) : null;
 }
 
 export function selectNextStackItems(state: AppStore): FileItem[] {
   const currentId = state.currentFileId;
   const visibleIds = getVisibleQueueIds(state).filter((fileId) => fileId !== currentId);
 
-  return visibleIds.map((fileId) => state.filesById[fileId]).filter((file): file is FileItem => Boolean(file)).slice(0, STACK_PREVIEW_COUNT);
+  return visibleIds
+    .map((fileId) => state.filesById[fileId])
+    .filter((file): file is FileItem => Boolean(file))
+    .slice(0, STACK_PREVIEW_COUNT);
 }
 
 export function selectPendingQueueCount(state: AppStore): number {
@@ -1358,7 +1758,10 @@ export function getFilterLabel(filter: FilterType): string {
 }
 
 export function selectFilterChips(state: AppStore): FilterChip[] {
-  if (cachedFilterChipQueueOrder === state.queueOrder && cachedFilterChipFilesById === state.filesById) {
+  if (
+    cachedFilterChipQueueOrder === state.queueOrder &&
+    cachedFilterChipFilesById === state.filesById
+  ) {
     return cachedFilterChips;
   }
 
@@ -1379,7 +1782,11 @@ export function selectFilterChips(state: AppStore): FilterChip[] {
 
     baseCounts.all += 1;
 
-    if (file.bucketType === 'screenshots' || file.bucketType === 'camera' || file.bucketType === 'downloads') {
+    if (
+      file.bucketType === 'screenshots' ||
+      file.bucketType === 'camera' ||
+      file.bucketType === 'downloads'
+    ) {
       baseCounts[file.bucketType] += 1;
       continue;
     }
@@ -1416,7 +1823,10 @@ export function selectFilterChips(state: AppStore): FilterChip[] {
   });
 
   const folderChips: FilterChip[] = [...folderCounts.entries()]
-    .sort((left, right) => right[1].count - left[1].count || left[1].label.localeCompare(right[1].label))
+    .sort(
+      (left, right) =>
+        right[1].count - left[1].count || left[1].label.localeCompare(right[1].label),
+    )
     .map(([id, value]) => ({
       id,
       label: value.label,
@@ -1438,7 +1848,9 @@ export function selectFilterChips(state: AppStore): FilterChip[] {
   return cachedFilterChips;
 }
 
-export function getActiveFilterLabel(state: Pick<AppStore, 'activeFilter' | 'filesById' | 'queueOrder'>): string {
+export function getActiveFilterLabel(
+  state: Pick<AppStore, 'activeFilter' | 'filesById' | 'queueOrder'>,
+): string {
   if (!isFolderFilter(state.activeFilter)) {
     return getFilterLabel(state.activeFilter);
   }
@@ -1473,9 +1885,13 @@ export function getSortLabel(sortMode: SortMode): string {
   return 'Oldest';
 }
 
-export function getQuickSessionLabel(targetCount: QuickSessionTarget | null): string {
-  if (targetCount === 25) {
-    return 'Quick 25';
+export function getQuickSessionLabel(targetCount: number | null): string {
+  if (targetCount === null) {
+    return 'Infinite session';
+  }
+
+  if (targetCount === 20 || targetCount === 25) {
+    return 'Quick 20';
   }
 
   if (targetCount === 50) {
