@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$repoRoot = Split-Path -Parent $PSScriptRoot
 
 function Test-JavaHome {
   param([string]$PathValue)
@@ -36,7 +37,8 @@ function Get-JavaCandidates {
     'C:\Program Files\Android\Android Studio\jbr',
     (Join-Path $env:LOCALAPPDATA 'Programs\Android Studio\jbr'),
     'C:\Program Files\Microsoft\jdk-17',
-    (Join-Path $env:LOCALAPPDATA 'Programs\MicrosoftJDK\jdk-17.0.18+8')
+    (Join-Path $env:LOCALAPPDATA 'Programs\MicrosoftJDK\jdk-17.0.18+8'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft\jdk-17.0.10.7-hotspot')
   )
 
   foreach ($candidate in $staticCandidates) {
@@ -60,6 +62,12 @@ function Get-JavaCandidates {
       ForEach-Object { $candidates.Add($_.FullName) }
   }
 
+  $workspaceToolsDir = Join-Path $repoRoot '.tools'
+  if (Test-Path $workspaceToolsDir) {
+    Get-ChildItem -Path $workspaceToolsDir -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match 'jdk|jbr|java' } |
+      ForEach-Object { $candidates.Add($_.FullName) }
+  }
   return $candidates | Select-Object -Unique
 }
 
@@ -72,7 +80,6 @@ if (-not $javaHome) {
 $env:JAVA_HOME = $javaHome
 $env:Path = "$(Join-Path $env:JAVA_HOME 'bin');$env:Path"
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
 $androidDir = Join-Path $repoRoot 'android'
 $gradleWrapper = Join-Path $androidDir 'gradlew.bat'
 
